@@ -1,0 +1,189 @@
+---
+title: "Domain Association"
+description: "Configure rpId and platform verification files"
+---
+
+## Why Domain Association?
+
+Passkeys are bound to specific domains for security. Mobile apps must prove ownership of a domain to use passkeys registered to that domain.
+
+This requires:
+1. An `rpId` (domain name) in your SDK config
+2. Verification files hosted on that domain
+3. App configuration linking to that domain
+
+## Understanding rpId
+
+The `rpId` (Relying Party ID) is the domain where passkeys are registered:
+
+```tsx
+const config = {
+  appId: 'your-app-id',
+  rpId: 'app.yourcompany.com', // This domain
+};
+```
+
+Requirements:
+- Must be a valid domain (not IP address or localhost)
+- Must host verification files at `/.well-known/`
+- App must be configured with associated domains
+
+## iOS Configuration
+
+### 1. Host apple-app-site-association
+
+Create a file at `https://app.yourcompany.com/.well-known/apple-app-site-association`:
+
+```json
+{
+  "webcredentials": {
+    "apps": [
+      "TEAMID.com.yourcompany.yourapp"
+    ]
+  }
+}
+```
+
+Replace:
+- `TEAMID` with your Apple Team ID (find in Apple Developer portal)
+- `com.yourcompany.yourapp` with your bundle identifier
+
+<Note>
+The file must be served:
+- Without `.json` extension
+- With `Content-Type: application/json`
+- Over HTTPS
+</Note>
+
+### 2. Configure Expo/Xcode
+
+In `app.json`:
+
+```json
+{
+  "expo": {
+    "ios": {
+      "bundleIdentifier": "com.yourcompany.yourapp",
+      "associatedDomains": [
+        "webcredentials:app.yourcompany.com"
+      ]
+    }
+  }
+}
+```
+
+Or in Xcode:
+1. Select your target
+2. Go to "Signing & Capabilities"
+3. Add "Associated Domains"
+4. Add `webcredentials:app.yourcompany.com`
+
+## Android Configuration
+
+### 1. Host assetlinks.json
+
+Create a file at `https://app.yourcompany.com/.well-known/assetlinks.json`:
+
+```json
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.yourcompany.yourapp",
+      "sha256_cert_fingerprints": [
+        "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
+      ]
+    }
+  }
+]
+```
+
+### 2. Get SHA-256 Fingerprint
+
+For debug builds:
+
+```bash
+keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+```
+
+For release builds, use your signing keystore.
+
+### 3. Configure Package Name
+
+In `app.json`:
+
+```json
+{
+  "expo": {
+    "android": {
+      "package": "com.yourcompany.yourapp"
+    }
+  }
+}
+```
+
+## Minimal Hosting Setup
+
+If you don't have a web presence, you can use static hosting:
+
+### Using Vercel
+
+1. Create a new project
+2. Add files to `public/.well-known/`
+3. Deploy
+
+### Using GitHub Pages
+
+1. Create repository
+2. Add `.well-known/` directory with files
+3. Enable GitHub Pages
+
+### Using Cloudflare Pages
+
+1. Create project
+2. Add files to output directory
+3. Deploy
+
+## Verification
+
+### iOS Verification
+
+After building, check device logs for:
+
+```
+Associated Domains: webcredentials:app.yourcompany.com
+```
+
+Or use Apple's validator:
+```
+https://app-site-association.cdn-apple.com/a/v1/app.yourcompany.com
+```
+
+### Android Verification
+
+Use Google's tool:
+```
+https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://app.yourcompany.com&relation=delegate_permission/common.handle_all_urls
+```
+
+## Troubleshooting
+
+### Passkey Registration Fails
+
+1. Verify AASA/assetlinks files are accessible
+2. Check Content-Type headers
+3. Ensure HTTPS is used
+4. Rebuild app after changing associated domains
+
+### "No Matching Credentials"
+
+1. Domain mismatch between `rpId` and hosted files
+2. Bundle ID / package name mismatch
+3. Wrong certificate fingerprint (Android)
+
+### Development Tips
+
+- Use a real domain even for development
+- Consider a subdomain like `dev.yourcompany.com`
+- iOS caches AASA files; restart device or wait 24h for updates

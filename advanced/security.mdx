@@ -1,0 +1,125 @@
+---
+title: "Security"
+description: "Understanding Cavos security model"
+---
+
+## Security Architecture
+
+Cavos uses a layered security model combining passkey encryption, secure storage, and backend backup.
+
+## Private Key Protection
+
+### Encryption at Rest
+
+Private keys are never stored in plaintext:
+
+| Platform | Encryption | Storage |
+|----------|------------|---------|
+| Web | AES-GCM with PRF-derived key | Backend API |
+| React Native | AES-GCM with PRF-derived key | SecureStore + Backend |
+
+### Encryption Flow
+
+1. User authenticates with passkey (FaceID/TouchID)
+2. WebAuthn PRF extension derives a 256-bit key
+3. Private key is encrypted with AES-GCM
+4. Encrypted blob is stored on backend
+5. PRF key is never stored (derived on-demand)
+
+### PRF (Pseudo-Random Function)
+
+The PRF extension provides deterministic key derivation:
+- Same passkey always produces same encryption key
+- Key is different for each passkey
+- No server-side secret required
+
+## Platform-Specific Security
+
+### Web SDK
+
+| Concern | Mitigation |
+|---------|------------|
+| XSS | Private keys only decrypted on user action |
+| Session hijacking | Keys cleared on logout |
+| Man-in-the-middle | HTTPS + passkey domain binding |
+
+**Session Storage**: Decrypted keys may be cached in `sessionStorage` for UX. This trades security for convenience.
+
+### React Native SDK
+
+| Concern | Mitigation |
+|---------|------------|
+| Root/Jailbreak | SecureStore uses OS keychain |
+| App tampering | Passkey bound to bundle ID |
+| Backup extraction | Encrypted with passkey key |
+
+**SecureStore**: Uses iOS Keychain / Android Keystore, which provides:
+- Hardware-backed encryption
+- Per-app isolation
+- Biometric protection option
+
+## Backend Security
+
+### What Cavos Stores
+
+| Data | Encrypted | Purpose |
+|------|-----------|---------|
+| Encrypted private key | Yes (AES-GCM) | Cross-device recovery |
+| Wallet address | No | User lookup |
+| Passkey credential ID | No | Wallet association |
+| OAuth identity | No | User mapping |
+
+### What Cavos Cannot Do
+
+- Decrypt private keys (no PRF key access)
+- Sign transactions on behalf of users
+- Access funds without user biometric
+
+## Attack Vectors
+
+### Passkey Compromise
+
+If an attacker gains access to user's passkey:
+- They can decrypt and use the wallet
+- Mitigated by device biometric requirement
+- Passkeys can be revoked via iCloud/Google account
+
+### Backend Breach
+
+If Cavos servers are compromised:
+- Attacker gets encrypted blobs
+- Cannot decrypt without passkey
+- Would need to brute-force AES-256
+
+### XSS on Web
+
+If attacker injects JavaScript:
+- May access session-cached keys
+- Mitigation: Content Security Policy
+- Mitigation: Clear cache on sensitive operations
+
+## Best Practices
+
+### For Developers
+
+1. Use HTTPS everywhere
+2. Implement Content Security Policy
+3. Validate all user inputs
+4. Set appropriate session timeouts
+5. Clear sensitive data on logout
+
+### For Users
+
+1. Use strong device passcode
+2. Enable biometric authentication
+3. Keep device OS updated
+4. Don't use on shared devices
+5. Review connected devices in iCloud/Google
+
+## Compliance Notes
+
+Cavos wallet infrastructure:
+- Non-custodial (users control keys)
+- Encrypted at rest
+- No access to plaintext keys
+- User-initiated transactions only

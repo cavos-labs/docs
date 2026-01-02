@@ -1,0 +1,124 @@
+---
+title: "Installation"
+description: "Install and configure @cavos/react for web applications"
+---
+
+## Requirements
+
+- React 18+ or Next.js 13+
+- Node.js 18+
+- A Cavos App ID from the [Dashboard](https://cavos.xyz/dashboard)
+
+## Installation
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install @cavos/react starknet
+    ```
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    yarn add @cavos/react starknet
+    ```
+  </Tab>
+  <Tab title="pnpm">
+    ```bash
+    pnpm add @cavos/react starknet
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+### CavosProvider
+
+Wrap your application with `CavosProvider` at the root level:
+
+```tsx
+import { CavosProvider } from '@cavos/react';
+
+const config = {
+  appId: 'your-app-id',
+  network: 'sepolia', // 'sepolia' | 'mainnet'
+};
+
+export default function App({ children }) {
+  return (
+    <CavosProvider config={config}>
+      {children}
+    </CavosProvider>
+  );
+}
+```
+
+### Configuration Options
+
+| Property | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `appId` | string | Yes | - | Your Cavos App ID |
+| `network` | 'sepolia' \| 'mainnet' | No | 'sepolia' | Target Starknet network |
+| `paymasterApiKey` | string | No | Cavos shared key | Custom AVNU Paymaster API key |
+| `starknetRpcUrl` | string | No | Alchemy RPC | Custom Starknet RPC URL |
+| `enableLogging` | boolean | No | false | Enable SDK debug logging |
+
+### Next.js App Router
+
+For Next.js 13+ with App Router, mark the provider as a client component:
+
+```tsx
+// app/providers.tsx
+'use client';
+
+import { CavosProvider } from '@cavos/react';
+
+export function Providers({ children }) {
+  return (
+    <CavosProvider config={{ appId: 'your-app-id' }}>
+      {children}
+    </CavosProvider>
+  );
+}
+```
+
+```tsx
+// app/layout.tsx
+import { Providers } from './providers';
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
+```
+
+### Passkey Modal Customization
+
+The SDK includes a built-in passkey modal for wallet creation. Customize it via config:
+
+```tsx
+const config = {
+  appId: 'your-app-id',
+  passkeyModal: {
+    title: 'Secure Your Wallet',
+    description: 'Use biometrics to protect your funds',
+    buttonText: 'Enable Passkey',
+  },
+};
+```
+
+## Exports
+
+The package exports:
+
+| Export | Description |
+|--------|-------------|
+| `CavosProvider` | React context provider |
+| `useCavos` | Main hook for SDK access |
+| `CavosSDK` | Direct SDK class (advanced) |
+| `WalletManager` | Wallet operations (advanced) |
+| `TransactionManager` | Transaction execution (advanced) |

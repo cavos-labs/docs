@@ -1,0 +1,91 @@
+---
+title: "Onramp"
+description: "Fiat-to-crypto onramp integration"
+---
+
+## Overview
+
+Cavos integrates with Ramp Network to allow users to purchase crypto with fiat currency directly into their wallet.
+
+## Supported Networks
+
+| Network | Status |
+|---------|--------|
+| Mainnet | Supported |
+| Sepolia | Not available |
+
+<Warning>
+Onramp is only available on mainnet. Calling `getOnramp()` on Sepolia will throw an error.
+</Warning>
+
+## Usage
+
+### Web SDK
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function BuyButton() {
+  const { getOnramp, address } = useCavos();
+
+  const handleBuy = () => {
+    if (!address) return;
+    
+    const url = getOnramp('RAMP_NETWORK');
+    window.open(url, '_blank');
+  };
+
+  return <button onClick={handleBuy}>Buy Crypto</button>;
+}
+```
+
+### React Native SDK
+
+```tsx
+import { useCavosNative } from '@cavos/react-native';
+import * as Linking from 'expo-linking';
+
+function BuyButton() {
+  const { cavos } = useCavosNative();
+
+  const handleBuy = async () => {
+    const url = cavos.getOnramp('RAMP_NETWORK');
+    await Linking.openURL(url);
+  };
+
+  return <Button title="Buy Crypto" onPress={handleBuy} />;
+}
+```
+
+## Supported Providers
+
+| Provider | ID | Description |
+|----------|------|-------------|
+| Ramp Network | `RAMP_NETWORK` | Card payments, bank transfers |
+
+## Ramp Network Details
+
+The generated URL includes:
+
+| Parameter | Value |
+|-----------|-------|
+| `userAddress` | User's Starknet wallet address |
+| `outAsset` | `STARKNET_USDC` |
+| `enabledCryptoAssets` | `STARKNET_*` |
+| `defaultFlow` | `ONRAMP` |
+
+Users can change the output asset in the Ramp interface.
+
+## Error Handling
+
+```tsx
+try {
+  const url = getOnramp('RAMP_NETWORK');
+} catch (error) {
+  if (error.message.includes('No account')) {
+    // User not logged in
+  } else if (error.message.includes('Sepolia')) {
+    // Wrong network
+  }
+}
+```

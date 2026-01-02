@@ -1,0 +1,201 @@
+---
+title: "Authentication"
+description: "OAuth and passkey authentication in React Native"
+---
+
+## Authentication Modes
+
+| Mode | Identity | Use Case |
+|------|----------|----------|
+| **OAuth + Passkey** | User has email/name | Apps needing user identity |
+| **Passkey-Only** | Anonymous | Privacy-focused apps |
+
+## OAuth Authentication
+
+### Get Login URL
+
+OAuth in React Native requires opening a web browser:
+
+```tsx
+import { useCavosNative } from '@cavos/react-native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+
+function LoginScreen() {
+  const { cavos, setAuthData } = useCavosNative();
+
+  const handleLogin = async () => {
+    // Get redirect URI for your app
+    const redirectUri = Linking.createURL('auth/callback');
+    
+    // Get OAuth URL
+    const loginUrl = await cavos.getLoginUrl('google', redirectUri);
+    
+    // Open browser
+    const result = await WebBrowser.openAuthSessionAsync(loginUrl, redirectUri);
+    
+    if (result.type === 'success') {
+      // Parse auth data from URL
+      const url = new URL(result.url);
+      const authData = JSON.parse(url.searchParams.get('auth_data'));
+      
+      // Set auth data in SDK
+      await setAuthData(authData);
+    }
+  };
+
+  return <Button title="Login with Google" onPress={handleLogin} />;
+}
+```
+
+### Supported Providers
+
+```tsx
+await cavos.getLoginUrl('google', redirectUri);
+await cavos.getLoginUrl('apple', redirectUri);
+```
+
+## Passkey-Only Authentication
+
+For anonymous wallets using only biometric authentication:
+
+```tsx
+import { useCavosNative } from '@cavos/react-native';
+
+function PasskeyScreen() {
+  const { createWallet, address, isLoading } = useCavosNative();
+
+  const handleCreate = async () => {
+    try {
+      await createWallet();
+      // Wallet created, address is now available
+    } catch (error) {
+      console.error('Passkey error:', error);
+    }
+  };
+
+  if (address) {
+    return <Text>Wallet: {address}</Text>;
+  }
+
+  return (
+    <Button
+      title="Continue with Passkey"
+      onPress={handleCreate}
+      disabled={isLoading}
+    />
+  );
+}
+```
+
+### Smart Recovery Flow
+
+`createWallet()` automatically:
+1. Checks for existing passkey
+2. If found, recovers wallet
+3. If not found, creates new wallet
+4. Deploys wallet gaslessly
+
+## Session Management
+
+### Check Auth State
+
+```tsx
+const { isAuthenticated, user, address, isLoading } = useCavosNative();
+
+if (isLoading) {
+  return <ActivityIndicator />;
+}
+
+if (!isAuthenticated && !address) {
+  return <LoginScreen />;
+}
+
+return <MainApp />;
+```
+
+### Session Persistence
+
+Sessions are stored in Secure Store:
+- OAuth tokens persist across app restarts
+- Passkey wallet metadata persists
+- Private keys are encrypted with passkey
+
+### Logout
+
+```tsx
+const { logout } = useCavosNative();
+
+async function handleLogout() {
+  await logout();
+  // Session cleared, navigate to login
+}
+```
+
+## Load Existing Wallet
+
+If you know the user has a wallet locally:
+
+```tsx
+const { loadWallet, hasWalletLocally } = useCavosNative();
+
+useEffect(() => {
+  const checkWallet = async () => {
+    if (await hasWalletLocally()) {
+      try {
+        await loadWallet(); // Triggers biometric prompt
+      } catch (error) {
+        // User cancelled or biometric failed
+      }
+    }
+  };
+  checkWallet();
+}, []);
+```
+
+## Recover Wallet
+
+For users on a new device with synced passkeys:
+
+```tsx
+const { recoverWallet } = useCavosNative();
+
+async function handleRecover() {
+  try {
+    await recoverWallet();
+    // Wallet recovered from backend
+  } catch (error) {
+    if (error.message.includes('No wallet found')) {
+      // No wallet on backend for this passkey
+    }
+  }
+}
+```
+
+## Error Handling
+
+```tsx
+try {
+  await createWallet();
+} catch (error) {
+  if (error.message.includes('cancelled')) {
+    // User cancelled biometric prompt
+  } else if (error.message.includes('not supported')) {
+    // Device doesn't support passkeys
+  } else if (error.message.includes('MAU limit')) {
+    // App limit reached
+  }
+}
+```
+
+## Check Passkey Support
+
+```tsx
+const { cavos } = useCavosNative();
+
+const supported = await cavos.isPasskeySupported();
+
+if (!supported) {
+  // Fall back to OAuth-only flow
+}
+```

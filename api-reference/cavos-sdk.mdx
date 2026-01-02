@@ -1,0 +1,250 @@
+---
+title: "CavosSDK"
+description: "Web SDK class reference"
+---
+
+## Constructor
+
+```typescript
+new CavosSDK(config: CavosConfig)
+```
+
+### CavosConfig
+
+```typescript
+interface CavosConfig {
+  appId: string;
+  network?: 'sepolia' | 'mainnet';
+  paymasterApiKey?: string;
+  starknetRpcUrl?: string;
+  enableLogging?: boolean;
+  passkeyModal?: {
+    title?: string;
+    description?: string;
+    buttonText?: string;
+  };
+}
+```
+
+## Initialization
+
+### init()
+
+```typescript
+async init(): Promise<void>
+```
+
+Initialize SDK and restore existing session.
+
+## Authentication
+
+### login(provider, redirectUri?)
+
+```typescript
+async login(provider: 'google' | 'apple', redirectUri?: string): Promise<void>
+```
+
+Start OAuth authentication flow.
+
+### loginWithGoogle(redirectUri?)
+
+```typescript
+async loginWithGoogle(redirectUri?: string): Promise<void>
+```
+
+### loginWithApple(redirectUri?)
+
+```typescript
+async loginWithApple(redirectUri?: string): Promise<void>
+```
+
+### handleCallback(authDataString)
+
+```typescript
+async handleCallback(authDataString: string): Promise<void>
+```
+
+Handle OAuth callback data.
+
+### logout()
+
+```typescript
+async logout(): Promise<void>
+```
+
+Clear session and wallet data.
+
+### isAuthenticated()
+
+```typescript
+isAuthenticated(): boolean
+```
+
+### getUserInfo()
+
+```typescript
+getUserInfo(): UserInfo | null
+```
+
+### deleteAccount()
+
+```typescript
+async deleteAccount(): Promise<void>
+```
+
+Permanently delete user account.
+
+## Wallet
+
+### createWallet()
+
+```typescript
+async createWallet(): Promise<void>
+```
+
+Create or recover wallet (smart flow).
+
+### getAddress()
+
+```typescript
+getAddress(): string | null
+```
+
+### hasWallet()
+
+```typescript
+async hasWallet(): Promise<boolean>
+```
+
+Check if wallet exists on backend.
+
+### getBalance()
+
+```typescript
+async getBalance(): Promise<string>
+```
+
+Get ETH balance in wei.
+
+### getFundingAddress()
+
+```typescript
+getFundingAddress(): string | null
+```
+
+### isAccountDeployed()
+
+```typescript
+async isAccountDeployed(): Promise<boolean>
+```
+
+### deployAccount()
+
+```typescript
+async deployAccount(): Promise<string>
+```
+
+Manually deploy account. Returns transaction hash.
+
+### retryWalletUnlock()
+
+```typescript
+async retryWalletUnlock(): Promise<void>
+```
+
+Retry biometric unlock after cancellation.
+
+## Passkey-Only
+
+### hasPasskeyOnlyWallet()
+
+```typescript
+async hasPasskeyOnlyWallet(): Promise<boolean>
+```
+
+### loadPasskeyOnlyWallet()
+
+```typescript
+async loadPasskeyOnlyWallet(): Promise<void>
+```
+
+### recoverWalletWithPasskey()
+
+```typescript
+async recoverWalletWithPasskey(): Promise<void>
+```
+
+### clearPasskeyOnlyWallet()
+
+```typescript
+async clearPasskeyOnlyWallet(): Promise<void>
+```
+
+## Transactions
+
+### execute(calls, options?)
+
+```typescript
+async execute(
+  calls: Call | Call[],
+  options?: { gasless?: boolean }
+): Promise<string>
+```
+
+Execute transaction(s). Returns transaction hash.
+
+### signMessage(message)
+
+```typescript
+async signMessage(message: string | TypedData): Promise<Signature>
+```
+
+## Session
+
+### hasActiveSession()
+
+```typescript
+hasActiveSession(): boolean
+```
+
+### createSession()
+
+```typescript
+async createSession(): Promise<void>
+```
+
+Note: Session keys not supported with ArgentX accounts.
+
+## Onramp
+
+### getOnramp(provider)
+
+```typescript
+getOnramp(provider: 'RAMP_NETWORK'): string
+```
+
+Get fiat onramp URL.
+
+## Advanced
+
+### getAccount()
+
+```typescript
+getAccount(): Account | null
+```
+
+Get starknet.js Account instance.
+
+### getSessionAccount()
+
+```typescript
+getSessionAccount(): Account | null
+```
+
+### deleteWallet()
+
+```typescript
+async deleteWallet(): Promise<void>
+```
+
+Delete wallet from cloud storage.

@@ -1,0 +1,168 @@
+---
+title: "Types"
+description: "TypeScript type definitions"
+---
+
+## Configuration
+
+### CavosConfig
+
+```typescript
+interface CavosConfig {
+  appId: string;
+  network?: 'sepolia' | 'mainnet';
+  paymasterApiKey?: string;
+  starknetRpcUrl?: string;
+  enableLogging?: boolean;
+  passkeyModal?: PasskeyModalConfig;
+}
+```
+
+### CavosNativeConfig
+
+```typescript
+interface CavosNativeConfig {
+  appId: string;
+  rpId: string;
+  network?: 'sepolia' | 'mainnet';
+  paymasterApiKey?: string;
+  starknetRpcUrl?: string;
+}
+```
+
+### PasskeyModalConfig
+
+```typescript
+interface PasskeyModalConfig {
+  title?: string;
+  description?: string;
+  buttonText?: string;
+}
+```
+
+## User
+
+### UserInfo
+
+```typescript
+interface UserInfo {
+  id: string;
+  email: string;
+  name?: string;
+  picture?: string;
+}
+```
+
+### LoginProvider
+
+```typescript
+type LoginProvider = 'google' | 'apple';
+```
+
+## Wallet
+
+### DecryptedWallet
+
+```typescript
+interface DecryptedWallet {
+  address: string;
+  publicKey: string;
+  privateKey: string;
+}
+```
+
+## Transactions
+
+### Call
+
+From starknet.js:
+
+```typescript
+interface Call {
+  contractAddress: string;
+  entrypoint: string;
+  calldata?: string[];
+}
+```
+
+## Signing
+
+### TypedData
+
+EIP-712 style typed data for signing:
+
+```typescript
+interface TypedData {
+  types: {
+    StarkNetDomain?: TypeElement[];
+    [key: string]: TypeElement[] | undefined;
+  };
+  primaryType: string;
+  domain: Record<string, unknown>;
+  message: Record<string, unknown>;
+}
+
+interface TypeElement {
+  name: string;
+  type: string;
+}
+```
+
+### Signature
+
+```typescript
+interface Signature {
+  r: string;
+  s: string;
+}
+```
+
+## Onramp
+
+### OnrampProvider
+
+```typescript
+type OnrampProvider = 'RAMP_NETWORK';
+```
+
+## Context
+
+### CavosContextValue
+
+```typescript
+interface CavosContextValue {
+  cavos: CavosSDK;
+  isAuthenticated: boolean;
+  user: UserInfo | null;
+  address: string | null;
+  hasActiveSession: boolean;
+  requiresWalletCreation: boolean;
+  isLoading: boolean;
+  login: (provider: LoginProvider, redirectUri?: string) => Promise<void>;
+  createWallet: () => Promise<void>;
+  execute: (calls: Call | Call[], options?: { gasless?: boolean }) => Promise<string>;
+  signMessage: (message: string | TypedData) => Promise<Signature>;
+  deleteAccount: () => Promise<void>;
+  retryWalletUnlock: () => Promise<void>;
+  getOnramp: (provider: OnrampProvider) => string;
+  logout: () => Promise<void>;
+}
+```
+
+### CavosNativeContextValue
+
+```typescript
+interface CavosNativeContextValue {
+  cavos: CavosNativeSDK;
+  isAuthenticated: boolean;
+  user: UserInfo | null;
+  address: string | null;
+  isLoading: boolean;
+  createWallet: () => Promise<void>;
+  loadWallet: () => Promise<void>;
+  recoverWallet: () => Promise<void>;
+  execute: (calls: Call | Call[], options?: { gasless?: boolean }) => Promise<string>;
+  logout: () => Promise<void>;
+  setAuthData: (authData: { access_token: string; user: UserInfo }) => Promise<void>;
+}
+```

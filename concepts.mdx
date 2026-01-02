@@ -1,0 +1,101 @@
+---
+title: "Core Concepts"
+description: "Understanding passkeys, gasless transactions, and account abstraction"
+---
+
+## Passkeys (WebAuthn)
+
+Passkeys are a modern authentication standard that replaces passwords with device biometrics. When a user authenticates with Cavos:
+
+1. The device generates a cryptographic key pair
+2. The private key is stored securely in the device's secure enclave (TPM/Secure Element)
+3. Authentication requires biometric verification (FaceID, TouchID, Windows Hello)
+
+### Passkey Encryption
+
+Cavos uses the WebAuthn PRF (Pseudo-Random Function) extension to derive an encryption key from the passkey. This key encrypts the wallet's private key:
+
+- **At rest**: Private key is encrypted with AES-GCM using the passkey-derived key
+- **In use**: Private key is decrypted only after successful biometric authentication
+- **Storage**: Encrypted private key is stored in the backend for cross-device recovery
+
+### Benefits
+
+- No passwords to remember or steal
+- Phishing-resistant (bound to specific domains)
+- Hardware-backed security
+- Cross-device recovery via passkey sync (iCloud Keychain, Google Password Manager)
+
+## Gasless Transactions
+
+Traditional blockchain transactions require users to hold the native token (ETH) to pay gas fees. Cavos eliminates this friction using **account abstraction** and **paymasters**.
+
+### How It Works
+
+1. User initiates a transaction
+2. SDK builds the transaction and sends it to AVNU Paymaster
+3. Paymaster sponsors the gas fee
+4. Transaction is executed on-chain
+5. User's wallet never needs to hold ETH
+
+### AVNU Paymaster
+
+Cavos uses AVNU's paymaster infrastructure. Each Cavos app receives:
+
+- **Sepolia**: Shared paymaster (free for testing)
+- **Mainnet**: Configurable paymaster with billing through Cavos dashboard
+
+## Account Abstraction (AA)
+
+Starknet has native account abstraction, meaning every account is a smart contract. Cavos wallets use the **ArgentX account contract**:
+
+```
+Account Class Hash: 0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f
+```
+
+### Account Features
+
+- **Upgradeable**: Account logic can be upgraded
+- **Guardian support**: Optional security guardian (disabled by default in Cavos)
+- **Multi-call**: Execute multiple transactions atomically
+
+### Deployment
+
+Accounts are deployed lazily when first used. Cavos handles this automatically:
+
+1. On wallet creation, the account address is computed deterministically
+2. The account can receive funds before deployment
+3. On first use (or automatically), the account is deployed via paymaster
+
+## Authentication Flows
+
+### OAuth + Passkey (Recommended)
+
+Best for apps that want user identity:
+
+```
+User -> Google/Apple OAuth -> Identity Verified -> Passkey Registration -> Wallet Created
+```
+
+- User has a social identity (email, name)
+- Wallet is linked to social account
+- Recovery possible via same social login + passkey
+
+### Passkey-Only (Anonymous)
+
+Best for privacy-focused apps:
+
+```
+User -> Passkey Registration -> Anonymous Wallet Created
+```
+
+- No identity collection
+- User is identified only by passkey
+- Recovery via passkey sync (iCloud/Google)
+
+## Network Support
+
+| Network | Status | Paymaster |
+|---------|--------|-----------|
+| Starknet Mainnet | Supported | AVNU (paid) |
+| Starknet Sepolia | Supported | AVNU (free) |

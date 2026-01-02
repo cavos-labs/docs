@@ -1,0 +1,217 @@
+---
+title: "CavosNativeSDK"
+description: "React Native SDK class reference"
+---
+
+## Constructor
+
+```typescript
+new CavosNativeSDK(config: CavosNativeConfig)
+```
+
+### CavosNativeConfig
+
+```typescript
+interface CavosNativeConfig {
+  appId: string;
+  rpId: string;  // Required
+  network?: 'sepolia' | 'mainnet';
+  paymasterApiKey?: string;
+  starknetRpcUrl?: string;
+}
+```
+
+## Initialization
+
+### init()
+
+```typescript
+async init(): Promise<void>
+```
+
+Initialize SDK and restore session. Optional (SDK auto-initializes on first use).
+
+## Authentication
+
+### getLoginUrl(provider, redirectUri)
+
+```typescript
+async getLoginUrl(
+  provider: 'google' | 'apple',
+  redirectUri: string
+): Promise<string>
+```
+
+Get OAuth URL for browser authentication.
+
+### setAuthData(authData)
+
+```typescript
+async setAuthData(authData: {
+  access_token: string;
+  user: UserInfo;
+}): Promise<void>
+```
+
+Set auth data after OAuth callback.
+
+### logout()
+
+```typescript
+async logout(): Promise<void>
+```
+
+### isAuthenticated()
+
+```typescript
+isAuthenticated(): boolean
+```
+
+### getUserInfo()
+
+```typescript
+getUserInfo(): UserInfo | null
+```
+
+## Wallet
+
+### createWallet()
+
+```typescript
+async createWallet(): Promise<void>
+```
+
+Create or recover wallet (smart flow).
+
+### loadWallet()
+
+```typescript
+async loadWallet(): Promise<void>
+```
+
+Load existing wallet (triggers biometric).
+
+### recoverWallet()
+
+```typescript
+async recoverWallet(): Promise<void>
+```
+
+Recover wallet from backend using passkey.
+
+### hasWalletLocally()
+
+```typescript
+async hasWalletLocally(): Promise<boolean>
+```
+
+### clearWallet()
+
+```typescript
+async clearWallet(): Promise<void>
+```
+
+### getAddress()
+
+```typescript
+getAddress(): string | null
+```
+
+### getActiveAddress()
+
+```typescript
+getActiveAddress(): string | null
+```
+
+Unified getter for any wallet type.
+
+### hasWallet()
+
+```typescript
+async hasWallet(): Promise<boolean>
+```
+
+### getBalance()
+
+```typescript
+async getBalance(): Promise<string>
+```
+
+### getFundingAddress()
+
+```typescript
+getFundingAddress(): string | null
+```
+
+### isAccountDeployed()
+
+```typescript
+async isAccountDeployed(): Promise<boolean>
+```
+
+### retryWalletUnlock()
+
+```typescript
+async retryWalletUnlock(): Promise<void>
+```
+
+## Transactions
+
+### execute(calls, options?)
+
+```typescript
+async execute(
+  calls: Call | Call[],
+  options?: { gasless?: boolean }
+): Promise<string>
+```
+
+## Passkey
+
+### isPasskeySupported()
+
+```typescript
+async isPasskeySupported(): Promise<boolean>
+```
+
+### isPasskeyOnlyMode()
+
+```typescript
+isPasskeyOnlyMode(): boolean
+```
+
+## Onramp
+
+### getOnramp(provider)
+
+```typescript
+getOnramp(provider: 'RAMP_NETWORK'): string
+```
+
+## Advanced
+
+### getAccount()
+
+```typescript
+getAccount(): Account | null
+```
+
+### getActiveAccount()
+
+```typescript
+getActiveAccount(): Account | null
+```
+
+Unified getter for any wallet type.
+
+## Deprecated Methods
+
+| Method | Replacement |
+|--------|-------------|
+| `createPasskeyOnlyWallet()` | `createWallet()` |
+| `loadPasskeyOnlyWallet()` | `loadWallet()` |
+| `recoverWalletWithPasskey()` | `recoverWallet()` |
+| `hasPasskeyOnlyWallet()` | `hasWalletLocally()` |
+| `clearPasskeyOnlyWallet()` | `clearWallet()` |
+| `getPasskeyOnlyAddress()` | `getAddress()` |
+| `getPasskeyOnlyAccount()` | `getAccount()` |

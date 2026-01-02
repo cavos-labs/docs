@@ -1,0 +1,129 @@
+---
+title: "Installation"
+description: "Install and configure @cavos/react-native for mobile apps"
+---
+
+## Requirements
+
+- React Native 0.72+
+- Expo SDK 54+ (recommended)
+- iOS 16+ / Android 9+
+- A Cavos App ID from the [Dashboard](https://cavos.xyz/dashboard)
+
+## Installation
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install @cavos/react-native starknet
+    ```
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    yarn add @cavos/react-native starknet
+    ```
+  </Tab>
+</Tabs>
+
+### Peer Dependencies
+
+The SDK requires these Expo packages:
+
+```bash
+npx expo install expo-crypto expo-secure-store react-native-passkey
+```
+
+| Package | Purpose |
+|---------|---------|
+| `expo-crypto` | Cryptographic operations |
+| `expo-secure-store` | Secure key storage (Keychain/Keystore) |
+| `react-native-passkey` | Native passkey support |
+
+## Configuration
+
+### Required: rpId
+
+The React Native SDK requires an `rpId` (Relying Party ID). This is the domain that validates your passkeys.
+
+```tsx
+import { CavosNativeProvider } from '@cavos/react-native';
+
+const config = {
+  appId: 'your-app-id',
+  rpId: 'app.yourcompany.com', // Required for passkeys
+  network: 'sepolia',
+};
+
+export default function App() {
+  return (
+    <CavosNativeProvider config={config}>
+      <MainScreen />
+    </CavosNativeProvider>
+  );
+}
+```
+
+<Warning>
+The `rpId` must be a valid domain that hosts association files. See [Domain Association](/react-native/domain-association) for setup instructions.
+</Warning>
+
+### Configuration Options
+
+| Property | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `appId` | string | Yes | - | Your Cavos App ID |
+| `rpId` | string | Yes | - | Domain for passkey validation |
+| `network` | 'sepolia' \| 'mainnet' | No | 'sepolia' | Target Starknet network |
+| `paymasterApiKey` | string | No | Cavos shared key | Custom AVNU Paymaster API key |
+| `starknetRpcUrl` | string | No | Alchemy RPC | Custom Starknet RPC URL |
+
+## Expo Configuration
+
+### app.json / app.config.js
+
+Configure associated domains for passkey support:
+
+```json
+{
+  "expo": {
+    "ios": {
+      "bundleIdentifier": "com.yourcompany.yourapp",
+      "associatedDomains": [
+        "webcredentials:app.yourcompany.com"
+      ]
+    },
+    "android": {
+      "package": "com.yourcompany.yourapp"
+    }
+  }
+}
+```
+
+## Development Build
+
+Passkeys require a development build (not Expo Go):
+
+```bash
+# Create development build
+npx expo prebuild
+
+# Run on iOS
+npx expo run:ios
+
+# Run on Android  
+npx expo run:android
+```
+
+<Note>
+Passkeys do not work in Expo Go. You must use a development build or production build.
+</Note>
+
+## Exports
+
+The package exports:
+
+| Export | Description |
+|--------|-------------|
+| `CavosNativeProvider` | React context provider |
+| `useCavosNative` | Main hook for SDK access |
+| `CavosNativeSDK` | Direct SDK class (advanced) |

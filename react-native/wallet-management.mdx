@@ -1,0 +1,158 @@
+---
+title: "Wallet Management"
+description: "Create, load, and manage wallets in React Native"
+---
+
+## Wallet Lifecycle
+
+```
+Not Created -> Created (local + backend) -> Deployed (on-chain)
+```
+
+The SDK handles this automatically with biometric prompts at each step.
+
+## Create Wallet
+
+### Automatic (Recommended)
+
+`createWallet()` handles the full flow:
+
+```tsx
+const { createWallet, address } = useCavosNative();
+
+await createWallet();
+// User saw FaceID/TouchID prompt
+// Wallet created and deployed
+console.log('Address:', address);
+```
+
+### Smart Flow
+
+`createWallet()` implements smart recovery:
+
+1. Check for existing passkey
+2. If exists, authenticate and recover from backend
+3. If not, create new passkey and wallet
+4. Deploy wallet gaslessly
+5. Backup to backend
+
+## Load Existing Wallet
+
+If you know a wallet exists locally:
+
+```tsx
+const { loadWallet, hasWalletLocally } = useCavosNative();
+
+// Check first
+if (await hasWalletLocally()) {
+  await loadWallet(); // Prompts for biometric
+}
+```
+
+## Recover Wallet
+
+For users on new devices with synced passkeys:
+
+```tsx
+const { recoverWallet } = useCavosNative();
+
+try {
+  await recoverWallet();
+  // Wallet recovered from backend
+} catch (error) {
+  // No wallet found for this passkey
+}
+```
+
+## Check Wallet Status
+
+### Has Wallet Locally
+
+```tsx
+const { hasWalletLocally } = useCavosNative();
+
+const exists = await hasWalletLocally();
+```
+
+### Is Deployed On-Chain
+
+```tsx
+const { cavos } = useCavosNative();
+
+const deployed = await cavos.isAccountDeployed();
+```
+
+## Get Wallet Information
+
+### Address
+
+```tsx
+const { address } = useCavosNative();
+// or
+const { cavos } = useCavosNative();
+const address = cavos.getAddress();
+```
+
+### Balance
+
+```tsx
+const { cavos } = useCavosNative();
+
+const balance = await cavos.getBalance();
+```
+
+### Funding Address
+
+```tsx
+const fundingAddress = cavos.getFundingAddress();
+```
+
+## Clear Wallet
+
+Remove wallet from local storage:
+
+```tsx
+const { clearWallet } = useCavosNative();
+
+await clearWallet();
+```
+
+This clears local data only. Backend backup remains for recovery.
+
+## Logout
+
+Full logout including OAuth session:
+
+```tsx
+const { logout } = useCavosNative();
+
+await logout();
+// Session and wallet cleared
+```
+
+## Storage Details
+
+React Native SDK uses `expo-secure-store`:
+
+| Data | Storage | Encryption |
+|------|---------|------------|
+| OAuth tokens | SecureStore | OS-level |
+| Wallet metadata | SecureStore | OS-level |
+| Encrypted private key | SecureStore | Passkey AES-GCM |
+
+Private keys are always encrypted. The passkey-derived key is never stored.
+
+## Advanced: Direct SDK Access
+
+```tsx
+const { cavos } = useCavosNative();
+
+// Get starknet.js Account
+const account = cavos.getAccount();
+
+// Check passkey mode
+const isPasskey = cavos.isPasskeyOnlyMode();
+
+// Get wallet mode
+const mode = cavos.walletManager?.getMode(); // 'passkey-only' | 'oauth'
+```

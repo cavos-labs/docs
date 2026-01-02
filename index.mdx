@@ -1,97 +1,65 @@
 ---
 title: "Introduction"
-description: "Welcome to the new home for your documentation"
+description: "Invisible wallet infrastructure for Starknet applications"
 ---
 
-## Setting up
+Cavos provides invisible wallet infrastructure for Starknet applications. Users authenticate with familiar methods (Google, Apple, or Passkeys) and get a fully functional wallet without managing seed phrases or installing extensions.
 
-Get your documentation site up and running in minutes.
+## Key Features
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Passkey Security" icon="fingerprint">
+    Private keys are encrypted with device biometrics (FaceID/TouchID) and never leave the user's device unencrypted.
+  </Card>
+  <Card title="Gasless Transactions" icon="bolt">
+    Users can transact without holding ETH. All gas fees are sponsored via AVNU Paymaster.
+  </Card>
+  <Card title="Cross-Platform" icon="devices">
+    SDKs for both web (React) and mobile (React Native) with unified APIs.
+  </Card>
+  <Card title="OAuth Integration" icon="key">
+    Support for Google and Apple sign-in with automatic wallet creation.
+  </Card>
+</CardGroup>
 
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
+## Choose Your Platform
 
 <Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+  <Card title="Web SDK" icon="browser" href="/web/installation">
+    For React web applications. Uses WebAuthn for passkey authentication.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="React Native SDK" icon="mobile" href="/react-native/installation">
+    For iOS and Android apps. Uses native passkeys with platform authenticators.
   </Card>
 </Columns>
 
-## Create beautiful pages
+## How It Works
 
-Everything you need to create world-class documentation.
+1. **User authenticates** with Google, Apple, or a passkey
+2. **Wallet is created** automatically with an ArgentX-compatible account
+3. **Wallet is deployed** gaslessly using AVNU Paymaster
+4. **Transactions execute** without users needing to hold ETH
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Quick Example
 
-## Need inspiration?
+```tsx
+import { CavosProvider, useCavos } from '@cavos/react';
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+function App() {
+  return (
+    <CavosProvider config={{ appId: 'your-app-id' }}>
+      <WalletButton />
+    </CavosProvider>
+  );
+}
+
+function WalletButton() {
+  const { login, address, execute } = useCavos();
+
+  if (address) {
+    return <p>Connected: {address}</p>;
+  }
+
+  return <button onClick={() => login('google')}>Login with Google</button>;
+}
+```

@@ -1,0 +1,239 @@
+---
+title: "React Hooks"
+description: "CavosProvider and useCavos hook reference"
+---
+
+## CavosProvider
+
+The provider component that initializes the SDK and provides context to child components.
+
+```tsx
+import { CavosProvider } from '@cavos/react';
+
+<CavosProvider config={config}>
+  <App />
+</CavosProvider>
+```
+
+### Config Props
+
+```typescript
+interface CavosConfig {
+  appId: string;                    // Required: Your Cavos App ID
+  network?: 'sepolia' | 'mainnet';  // Default: 'sepolia'
+  paymasterApiKey?: string;         // Custom paymaster key
+  starknetRpcUrl?: string;          // Custom RPC URL
+  enableLogging?: boolean;          // Enable debug logs
+  passkeyModal?: {                  // Modal customization
+    title?: string;
+    description?: string;
+    buttonText?: string;
+  };
+}
+```
+
+### Initialization Behavior
+
+On mount, `CavosProvider`:
+
+1. Checks URL for OAuth callback data
+2. Restores existing OAuth session from storage
+3. Checks for existing passkey-only wallet
+4. Loads wallet if found (prompts for biometric)
+5. Sets authentication and wallet state
+
+## useCavos Hook
+
+Access SDK functionality from any child component:
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function MyComponent() {
+  const {
+    // State
+    isAuthenticated,
+    user,
+    address,
+    isLoading,
+    hasActiveSession,
+    requiresWalletCreation,
+    
+    // Actions
+    login,
+    createWallet,
+    execute,
+    signMessage,
+    logout,
+    deleteAccount,
+    retryWalletUnlock,
+    getOnramp,
+    
+    // SDK instance
+    cavos,
+  } = useCavos();
+
+  return <div>...</div>;
+}
+```
+
+### State Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `isAuthenticated` | boolean | User is authenticated (OAuth or passkey) |
+| `user` | UserInfo \| null | User info from OAuth (or placeholder for passkey) |
+| `address` | string \| null | Wallet address if loaded |
+| `isLoading` | boolean | SDK is initializing or processing |
+| `hasActiveSession` | boolean | Session is active and not expired |
+| `requiresWalletCreation` | boolean | User needs to create wallet (shows modal) |
+
+### Action Methods
+
+#### login(provider, redirectUri?)
+
+Start OAuth authentication:
+
+```tsx
+await login('google');
+await login('apple');
+await login('google', 'https://myapp.com/callback');
+```
+
+#### createWallet()
+
+Create or recover a wallet:
+
+```tsx
+await createWallet();
+```
+
+For passkey-only mode, call this without prior `login()`.
+
+#### execute(calls, options?)
+
+Execute transactions:
+
+```tsx
+const txHash = await execute(
+  { contractAddress, entrypoint, calldata },
+  { gasless: true }
+);
+```
+
+#### signMessage(message)
+
+Sign a message:
+
+```tsx
+const signature = await signMessage('Hello World');
+// Returns { r: string, s: string }
+```
+
+#### logout()
+
+Clear session and wallet:
+
+```tsx
+await logout();
+```
+
+#### deleteAccount()
+
+Permanently delete account:
+
+```tsx
+await deleteAccount();
+```
+
+#### retryWalletUnlock()
+
+Retry biometric unlock after cancellation:
+
+```tsx
+await retryWalletUnlock();
+```
+
+#### getOnramp(provider)
+
+Get fiat onramp URL:
+
+```tsx
+const url = getOnramp('RAMP_NETWORK');
+window.open(url, '_blank');
+```
+
+### SDK Instance
+
+Access the underlying `CavosSDK` for advanced operations:
+
+```tsx
+const { cavos } = useCavos();
+
+// Direct SDK methods
+const account = cavos.getAccount();
+const balance = await cavos.getBalance();
+const isDeployed = await cavos.isAccountDeployed();
+```
+
+## UserInfo Type
+
+```typescript
+interface UserInfo {
+  id: string;       // User ID (social ID or 'passkey-user')
+  email: string;    // Email or 'Passkey Wallet'
+  name?: string;    // Display name
+  picture?: string; // Profile picture URL
+}
+```
+
+## Error Handling
+
+The hook throws errors that can be caught in your handlers:
+
+```tsx
+const { login, createWallet } = useCavos();
+
+const handleLogin = async () => {
+  try {
+    await login('google');
+  } catch (error) {
+    // Handle login error
+    console.error('Login failed:', error.message);
+  }
+};
+
+const handleCreate = async () => {
+  try {
+    await createWallet();
+  } catch (error) {
+    if (error.message.includes('cancelled')) {
+      // User cancelled passkey
+    } else if (error.message.includes('MAU limit')) {
+      // App limit reached
+    }
+  }
+};
+```
+
+## Passkey Modal
+
+The provider includes a built-in modal for wallet creation. It appears when:
+
+- `requiresWalletCreation` is true
+- User authenticated via OAuth but has no wallet
+
+Customize via config:
+
+```tsx
+<CavosProvider
+  config={{
+    appId: 'your-app-id',
+    passkeyModal: {
+      title: 'Secure Your Wallet',
+      description: 'Enable biometric protection',
+      buttonText: 'Create Passkey',
+    },
+  }}
+>
+```

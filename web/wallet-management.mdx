@@ -1,0 +1,163 @@
+---
+title: "Wallet Management"
+description: "Create, load, and manage wallets"
+---
+
+## Wallet Lifecycle
+
+Wallets in Cavos go through these states:
+
+```
+Not Created -> Created (local) -> Deployed (on-chain)
+```
+
+The SDK handles this automatically, but you can also control each step manually.
+
+## Automatic Wallet Creation
+
+When using OAuth login, wallets are created automatically:
+
+```tsx
+const { login, address } = useCavos();
+
+// After login completes, address is available
+await login('google');
+console.log(address); // '0x...'
+```
+
+## Manual Wallet Creation
+
+For passkey-only wallets or explicit control:
+
+```tsx
+const { createWallet, address } = useCavos();
+
+async function handleCreate() {
+  await createWallet();
+  console.log('Wallet created:', address);
+}
+```
+
+### Smart Recovery Flow
+
+`createWallet()` implements a smart recovery flow:
+
+1. Check if user has existing passkey
+2. If yes, recover existing wallet
+3. If no, create new wallet
+4. Deploy wallet gaslessly
+
+This means users who clear their browser cache can recover their wallet just by calling `createWallet()` again.
+
+## Check Wallet Status
+
+### Has Wallet Locally
+
+```tsx
+const { cavos } = useCavos();
+
+const hasLocal = await cavos.hasPasskeyOnlyWallet();
+```
+
+### Has Wallet on Backend
+
+```tsx
+const { cavos } = useCavos();
+
+const hasBackend = await cavos.hasWallet();
+```
+
+### Is Deployed On-Chain
+
+```tsx
+const { cavos } = useCavos();
+
+const isDeployed = await cavos.isAccountDeployed();
+```
+
+## Get Wallet Information
+
+### Address
+
+```tsx
+const { address } = useCavos();
+// or
+const address = cavos.getAddress();
+```
+
+### Balance
+
+```tsx
+const { cavos } = useCavos();
+
+const balance = await cavos.getBalance();
+console.log('ETH Balance:', balance);
+```
+
+### Funding Address
+
+Get the address to send funds to (same as wallet address):
+
+```tsx
+const fundingAddress = cavos.getFundingAddress();
+```
+
+## Wallet Recovery
+
+### Passkey-Only Recovery
+
+Users can recover their wallet on a new device if their passkey is synced:
+
+```tsx
+const { cavos } = useCavos();
+
+await cavos.recoverWalletWithPasskey();
+```
+
+This:
+1. Prompts for passkey authentication
+2. Fetches encrypted wallet from backend
+3. Decrypts with passkey
+4. Restores wallet locally
+
+### OAuth Recovery
+
+For OAuth users, recovery happens automatically when they log in with the same social account.
+
+## Clear Wallet
+
+Clear the local wallet cache (does not delete on-chain or backend data):
+
+```tsx
+const { logout } = useCavos();
+
+await logout();
+```
+
+## Delete Account
+
+Permanently delete the wallet from Cavos servers:
+
+```tsx
+const { deleteAccount } = useCavos();
+
+await deleteAccount();
+```
+
+<Warning>
+This removes the encrypted private key from Cavos servers. The on-chain account still exists but becomes inaccessible.
+</Warning>
+
+## Direct SDK Access
+
+For advanced use cases, access the underlying SDK instance:
+
+```tsx
+const { cavos } = useCavos();
+
+// Get the starknet.js Account instance
+const account = cavos.getAccount();
+
+// Use with starknet.js directly
+const balance = await account.getBalance();
+```

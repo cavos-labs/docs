@@ -1,0 +1,229 @@
+---
+title: "Error Handling"
+description: "Common errors and troubleshooting"
+---
+
+## Error Categories
+
+| Category | Examples |
+|----------|----------|
+| Authentication | Passkey cancelled, OAuth failed |
+| Wallet | No wallet found, creation failed |
+| Transaction | Execution failed, insufficient funds |
+| Network | RPC errors, timeout |
+| Limits | MAU exceeded |
+
+## Authentication Errors
+
+### Passkey Cancelled
+
+```tsx
+try {
+  await createWallet();
+} catch (error) {
+  if (error.message.includes('cancelled') || 
+      error.message.includes('abort')) {
+    // User cancelled biometric prompt
+    showMessage('Please authenticate to continue');
+  }
+}
+```
+
+### Passkey Not Supported
+
+```tsx
+// Check before attempting
+const supported = await cavos.isPasskeySupported?.();
+if (!supported) {
+  // Fall back to OAuth-only
+  showOAuthLogin();
+}
+```
+
+### OAuth Failed
+
+```tsx
+try {
+  await login('google');
+} catch (error) {
+  if (error.message.includes('popup')) {
+    // Popup blocked
+    showMessage('Please allow popups');
+  }
+}
+```
+
+## Wallet Errors
+
+### No Wallet Found
+
+```tsx
+try {
+  await loadWallet();
+} catch (error) {
+  if (error.message === 'No wallet found') {
+    // User doesn't have a wallet yet
+    showCreateWalletPrompt();
+  }
+}
+```
+
+### Wallet Already Exists
+
+When trying to create a wallet that exists:
+- `createWallet()` automatically recovers
+- No error thrown, existing wallet loaded
+
+### MAU Limit Exceeded
+
+```tsx
+try {
+  await createWallet();
+} catch (error) {
+  if (error.message.includes('MAU limit')) {
+    showMessage('App limit reached. Please try later.');
+  }
+}
+```
+
+## Transaction Errors
+
+### Not Initialized
+
+```tsx
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('not initialized')) {
+    // Need to create/load wallet first
+    await createWallet();
+    await execute(calls);
+  }
+}
+```
+
+### Contract Error
+
+```tsx
+try {
+  await execute(calls, { gasless: true });
+} catch (error) {
+  // Parse Starknet error
+  console.error('Transaction failed:', error.message);
+  // Common: "Contract not found", "Entry point not found"
+}
+```
+
+### Paymaster Error
+
+```tsx
+try {
+  await execute(calls, { gasless: true });
+} catch (error) {
+  if (error.message.includes('paymaster')) {
+    // Fallback to paid transaction
+    await execute(calls, { gasless: false });
+  }
+}
+```
+
+## Network Errors
+
+### RPC Timeout
+
+```tsx
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('timeout') || 
+      error.message.includes('network')) {
+    showMessage('Network error. Please try again.');
+  }
+}
+```
+
+### Rate Limited
+
+If using default Cavos RPC and hitting limits:
+
+```tsx
+const config = {
+  appId: 'your-app-id',
+  starknetRpcUrl: 'https://your-own-rpc.com',  // Use own RPC
+};
+```
+
+## React Native Specific
+
+### Domain Association Failed
+
+```
+Error: No matching passkeys found
+```
+
+Solutions:
+1. Check rpId matches hosted files
+2. Verify AASA/assetlinks content
+3. Rebuild app after config change
+4. Check associated domains entitlement
+
+### SecureStore Errors
+
+```tsx
+try {
+  await loadWallet();
+} catch (error) {
+  if (error.message.includes('SecureStore')) {
+    // Storage issue, may need to clear and recreate
+    await clearWallet();
+    showMessage('Please create a new wallet');
+  }
+}
+```
+
+## Debugging
+
+### Enable Logging
+
+```tsx
+const config = {
+  appId: 'your-app-id',
+  enableLogging: true,  // Console logs from SDK
+};
+```
+
+### Check Wallet State
+
+```tsx
+const { cavos } = useCavos();
+
+console.log('Address:', cavos.getAddress());
+console.log('Authenticated:', cavos.isAuthenticated());
+console.log('Has wallet:', await cavos.hasWallet());
+console.log('Is deployed:', await cavos.isAccountDeployed());
+```
+
+## Error Recovery Flow
+
+```tsx
+async function handleError(error, operation) {
+  if (error.message.includes('cancelled')) {
+    // User action needed
+    return { action: 'retry', message: 'Please authenticate' };
+  }
+  
+  if (error.message.includes('MAU limit')) {
+    // App limit
+    return { action: 'wait', message: 'Limit reached' };
+  }
+  
+  if (error.message.includes('network')) {
+    // Network issue
+    return { action: 'retry', message: 'Network error' };
+  }
+  
+  // Unknown error
+  console.error(`${operation} failed:`, error);
+  return { action: 'support', message: 'Please contact support' };
+}
+```

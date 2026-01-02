@@ -1,0 +1,134 @@
+---
+title: "Transactions"
+description: "Execute gasless transactions in React Native"
+---
+
+## Overview
+
+Execute Starknet transactions with optional gas sponsorship via AVNU Paymaster.
+
+## Basic Transaction
+
+```tsx
+import { useCavosNative } from '@cavos/react-native';
+
+function TransferScreen() {
+  const { execute } = useCavosNative();
+
+  const handleTransfer = async () => {
+    const txHash = await execute(
+      {
+        contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
+        entrypoint: 'transfer',
+        calldata: [recipientAddress, amountLow, amountHigh],
+      },
+      { gasless: true }
+    );
+
+    console.log('Transaction:', txHash);
+  };
+
+  return <Button title="Transfer" onPress={handleTransfer} />;
+}
+```
+
+## Call Format
+
+```typescript
+interface Call {
+  contractAddress: string;
+  entrypoint: string;
+  calldata?: string[];
+}
+```
+
+## Multiple Calls
+
+Execute atomic multicall:
+
+```tsx
+const txHash = await execute(
+  [
+    {
+      contractAddress: tokenAddress,
+      entrypoint: 'approve',
+      calldata: [spender, amount, '0'],
+    },
+    {
+      contractAddress: dexAddress,
+      entrypoint: 'swap',
+      calldata: [...],
+    },
+  ],
+  { gasless: true }
+);
+```
+
+## Gasless vs Paid
+
+### Gasless (Recommended)
+
+```tsx
+await execute(calls, { gasless: true });
+```
+
+- User pays nothing
+- Gas sponsored by AVNU Paymaster
+- Works immediately after wallet creation
+
+### User-Paid
+
+```tsx
+await execute(calls, { gasless: false });
+```
+
+- User pays ETH for gas
+- Wallet must have ETH balance
+
+## Transaction Status
+
+```tsx
+import { RpcProvider } from 'starknet';
+
+const provider = new RpcProvider({ nodeUrl: rpcUrl });
+
+// Wait for confirmation
+await provider.waitForTransaction(txHash);
+
+// Get receipt
+const receipt = await provider.getTransactionReceipt(txHash);
+```
+
+## Error Handling
+
+```tsx
+try {
+  const txHash = await execute(calls, { gasless: true });
+} catch (error) {
+  if (error.message.includes('No account')) {
+    // Wallet not loaded
+  } else if (error.message.includes('MAU limit')) {
+    // App limit reached
+  } else if (error.message.includes('insufficient')) {
+    // Balance or paymaster error
+  } else {
+    // Contract error
+    Alert.alert('Error', error.message);
+  }
+}
+```
+
+## Advanced: Direct Account
+
+```tsx
+const { cavos } = useCavosNative();
+
+const account = cavos.getAccount();
+
+// Use starknet.js directly
+const result = await account.execute(calls);
+```
+
+<Note>
+Direct account access bypasses gasless. Use `execute({ gasless: true })` for sponsored transactions.
+</Note>

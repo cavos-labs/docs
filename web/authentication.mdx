@@ -1,0 +1,179 @@
+---
+title: "Authentication"
+description: "OAuth and passkey-only authentication flows"
+---
+
+## Authentication Modes
+
+Cavos supports two authentication modes:
+
+| Mode | Identity | Use Case |
+|------|----------|----------|
+| **OAuth + Passkey** | User has email/name from Google/Apple | Apps that need user identity |
+| **Passkey-Only** | Anonymous, no email collected | Privacy-focused apps |
+
+## OAuth Authentication
+
+### Login with Google
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function LoginButton() {
+  const { login, isAuthenticated, user } = useCavos();
+
+  if (isAuthenticated) {
+    return <p>Welcome, {user?.name}</p>;
+  }
+
+  return (
+    <button onClick={() => login('google')}>
+      Login with Google
+    </button>
+  );
+}
+```
+
+### Login with Apple
+
+```tsx
+<button onClick={() => login('apple')}>
+  Login with Apple
+</button>
+```
+
+### OAuth Flow
+
+1. User clicks login button
+2. Redirect to Google/Apple OAuth
+3. User authenticates
+4. Redirect back with auth data
+5. SDK creates/loads wallet
+6. User prompted for passkey (FaceID/TouchID/Windows Hello)
+
+<Note>
+The passkey prompt happens automatically after OAuth. This secures the wallet with biometrics.
+</Note>
+
+## Passkey-Only Authentication
+
+For apps that don't need user identity, use passkey-only mode:
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function PasskeyButton() {
+  const { createWallet, address, isLoading } = useCavos();
+
+  if (address) {
+    return <p>Wallet: {address}</p>;
+  }
+
+  return (
+    <button onClick={createWallet} disabled={isLoading}>
+      Continue with Passkey
+    </button>
+  );
+}
+```
+
+### How It Works
+
+When `createWallet()` is called without prior OAuth login:
+
+1. SDK checks for existing passkey wallet
+2. If found, prompts for biometric authentication
+3. If not found, creates new passkey and wallet
+4. Wallet is deployed gaslessly
+
+<Warning>
+Passkey-only wallets can only be recovered on devices that have the passkey synced (iCloud Keychain, Google Password Manager). Users should understand this limitation.
+</Warning>
+
+## Session Management
+
+### Check Authentication State
+
+```tsx
+const { isAuthenticated, user, address, isLoading } = useCavos();
+
+if (isLoading) {
+  return <Spinner />;
+}
+
+if (!isAuthenticated) {
+  return <LoginButton />;
+}
+
+// User is authenticated
+```
+
+### Logout
+
+```tsx
+const { logout } = useCavos();
+
+async function handleLogout() {
+  await logout();
+  // User is now logged out, wallet is cleared
+}
+```
+
+### Session Restoration
+
+The SDK automatically restores sessions on page load:
+
+- **OAuth sessions**: Restored from browser storage
+- **Passkey wallets**: Restored from local storage (requires biometric)
+
+## Error Handling
+
+### Passkey Cancellation
+
+If a user cancels the passkey prompt:
+
+```tsx
+try {
+  await createWallet();
+} catch (error) {
+  if (error.message.includes('cancelled')) {
+    // User cancelled passkey prompt
+    showRetryButton();
+  }
+}
+```
+
+### Retry Wallet Unlock
+
+For users who cancelled passkey but are still authenticated:
+
+```tsx
+const { retryWalletUnlock, isAuthenticated, address } = useCavos();
+
+// Show retry button if authenticated but no wallet
+if (isAuthenticated && !address) {
+  return (
+    <button onClick={retryWalletUnlock}>
+      Unlock Wallet
+    </button>
+  );
+}
+```
+
+## Account Deletion
+
+To permanently delete a user's account and wallet:
+
+```tsx
+const { deleteAccount } = useCavos();
+
+async function handleDeleteAccount() {
+  if (confirm('This action is irreversible. Delete account?')) {
+    await deleteAccount();
+  }
+}
+```
+
+<Warning>
+Account deletion removes the wallet from Cavos servers. The on-chain account still exists but the private key is irrecoverable.
+</Warning>

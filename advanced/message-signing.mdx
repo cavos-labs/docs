@@ -1,0 +1,147 @@
+---
+title: "Message Signing"
+description: "Sign messages with the wallet private key"
+---
+
+## Overview
+
+Sign messages for authentication, proof of ownership, or off-chain signatures.
+
+## Basic Usage
+
+### Web SDK
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function SignButton() {
+  const { signMessage } = useCavos();
+
+  const handleSign = async () => {
+    const signature = await signMessage('Hello World');
+    console.log('Signature:', signature);
+    // { r: '0x...', s: '0x...' }
+  };
+
+  return <button onClick={handleSign}>Sign Message</button>;
+}
+```
+
+### React Native SDK
+
+```tsx
+import { useCavosNative } from '@cavos/react-native';
+
+function SignButton() {
+  const { cavos } = useCavosNative();
+
+  const handleSign = async () => {
+    const account = cavos.getAccount();
+    const signature = await account.signMessage(typedData);
+  };
+}
+```
+
+## Message Format
+
+### Simple String
+
+```tsx
+const signature = await signMessage('Hello World');
+```
+
+For strings over 31 characters, the message is hashed before signing.
+
+### TypedData (EIP-712 style)
+
+```tsx
+const typedData = {
+  types: {
+    StarkNetDomain: [
+      { name: 'name', type: 'shortstring' },
+      { name: 'version', type: 'shortstring' },
+    ],
+    Message: [
+      { name: 'content', type: 'felt' },
+    ],
+  },
+  primaryType: 'Message',
+  domain: {
+    name: 'MyApp',
+    version: '1',
+  },
+  message: {
+    content: '0x1234...',
+  },
+};
+
+const signature = await signMessage(typedData);
+```
+
+## Signature Format
+
+```typescript
+interface Signature {
+  r: string;
+  s: string;
+}
+```
+
+ECDSA signature components on the STARK curve.
+
+## Use Cases
+
+### Authentication
+
+```tsx
+// Client
+const message = `Sign in to MyApp: ${nonce}`;
+const signature = await signMessage(message);
+
+// Send to server
+await fetch('/api/auth', {
+  method: 'POST',
+  body: JSON.stringify({ address, message, signature }),
+});
+```
+
+### Proof of Ownership
+
+```tsx
+const message = `I own wallet ${address} on ${new Date().toISOString()}`;
+const signature = await signMessage(message);
+```
+
+### Off-chain Orders
+
+```tsx
+const order = {
+  types: { ... },
+  primaryType: 'Order',
+  domain: { name: 'DEX', version: '1' },
+  message: {
+    maker: address,
+    tokenIn: '0x...',
+    amountIn: '1000000',
+    tokenOut: '0x...',
+    minAmountOut: '999000',
+    expiry: Date.now() + 3600000,
+  },
+};
+
+const signature = await signMessage(order);
+```
+
+## Verification
+
+Signatures can be verified on-chain or off-chain using the account's public key.
+
+```typescript
+import { ec } from 'starknet';
+
+// Get public key from signature
+const publicKey = ec.starkCurve.getStarkKey(privateKey);
+
+// Verify (simplified)
+const isValid = ec.starkCurve.verify(signature, messageHash, publicKey);
+```

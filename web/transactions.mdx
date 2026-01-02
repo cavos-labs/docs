@@ -1,0 +1,181 @@
+---
+title: "Transactions"
+description: "Execute gasless transactions on Starknet"
+---
+
+## Overview
+
+Cavos SDK enables gasless transactions via AVNU Paymaster. Users can execute transactions without holding ETH for gas.
+
+## Basic Transaction
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function TransferButton() {
+  const { execute } = useCavos();
+
+  const handleTransfer = async () => {
+    const txHash = await execute(
+      {
+        contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
+        entrypoint: 'transfer',
+        calldata: ['0xrecipient', '1000000000000000000', '0'], // 1 ETH
+      },
+      { gasless: true }
+    );
+
+    console.log('Transaction hash:', txHash);
+  };
+
+  return <button onClick={handleTransfer}>Transfer</button>;
+}
+```
+
+## Call Format
+
+Each call follows the starknet.js `Call` interface:
+
+```typescript
+interface Call {
+  contractAddress: string;  // Contract to call
+  entrypoint: string;       // Function name
+  calldata?: string[];      // Function arguments
+}
+```
+
+## Multiple Calls (Multicall)
+
+Execute multiple calls atomically in a single transaction:
+
+```tsx
+const txHash = await execute(
+  [
+    {
+      contractAddress: tokenAddress,
+      entrypoint: 'approve',
+      calldata: [spenderAddress, amount, '0'],
+    },
+    {
+      contractAddress: dexAddress,
+      entrypoint: 'swap',
+      calldata: [tokenIn, tokenOut, amountIn, minAmountOut],
+    },
+  ],
+  { gasless: true }
+);
+```
+
+All calls succeed or fail together. This is useful for:
+- Approve + Swap
+- Multi-token transfers
+- Complex DeFi operations
+
+## Gasless vs Paid
+
+### Gasless (Default for Cavos)
+
+```tsx
+await execute(calls, { gasless: true });
+```
+
+- User pays nothing
+- Gas is sponsored by AVNU Paymaster
+- Requires Cavos paymaster API key
+
+### User-Paid Gas
+
+```tsx
+await execute(calls, { gasless: false });
+```
+
+- User pays gas in ETH
+- Wallet must have sufficient ETH balance
+- Standard Starknet transaction
+
+## Transaction Status
+
+The `execute()` function returns the transaction hash immediately. To track status:
+
+```tsx
+import { RpcProvider } from 'starknet';
+
+const provider = new RpcProvider({ nodeUrl: 'https://...' });
+
+// Wait for transaction to be accepted
+await provider.waitForTransaction(txHash);
+
+// Get receipt
+const receipt = await provider.getTransactionReceipt(txHash);
+console.log('Status:', receipt.finality_status);
+```
+
+## Error Handling
+
+```tsx
+try {
+  const txHash = await execute(calls, { gasless: true });
+  console.log('Success:', txHash);
+} catch (error) {
+  if (error.message.includes('MAU limit')) {
+    // App has exceeded monthly active user limit
+    showUpgradePrompt();
+  } else if (error.message.includes('insufficient')) {
+    // Paymaster quota exceeded or user balance too low
+    showFundingPrompt();
+  } else {
+    // Contract execution error
+    console.error('Transaction failed:', error);
+  }
+}
+```
+
+## Common Contracts
+
+### ETH Token
+
+```typescript
+const ETH_ADDRESS = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
+
+// Transfer ETH
+await execute({
+  contractAddress: ETH_ADDRESS,
+  entrypoint: 'transfer',
+  calldata: [recipientAddress, amountLow, amountHigh], // u256 split
+});
+```
+
+### ERC20 Token
+
+```typescript
+// Approve spender
+await execute({
+  contractAddress: tokenAddress,
+  entrypoint: 'approve',
+  calldata: [spenderAddress, amountLow, amountHigh],
+});
+
+// Transfer
+await execute({
+  contractAddress: tokenAddress,
+  entrypoint: 'transfer',
+  calldata: [recipientAddress, amountLow, amountHigh],
+});
+```
+
+## Advanced: Direct Account Access
+
+For operations not covered by `execute()`:
+
+```tsx
+const { cavos } = useCavos();
+
+const account = cavos.getAccount();
+
+// Use starknet.js Account directly
+const result = await account.execute([...calls]);
+```
+
+<Note>
+Direct account access bypasses gasless sponsorship. Use `execute({ gasless: true })` for sponsored transactions.
+</Note>
