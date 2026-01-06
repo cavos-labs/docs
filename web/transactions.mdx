@@ -1,34 +1,72 @@
 ---
 title: "Transactions"
-description: "Execute gasless transactions on Starknet"
+description: "Execute gasless transactions with session keys"
 ---
 
 ## Overview
 
-Cavos SDK enables gasless transactions via AVNU Paymaster. Users can execute transactions without holding ETH for gas.
+Cavos uses **session keys** for all transactions. After creating a session, users can execute unlimited transactions without any signature prompts.
+
+> [!NOTE]
+> All transactions are signed with the session key, not the user's private key. The private key is cleared from memory after session creation.
+
+## Prerequisites
+
+Before executing transactions, you need an active session:
+
+```tsx
+import { useCavos, useSession } from '@cavos/react';
+
+function App() {
+  const { login } = useCavos();
+  const { createSession, hasActiveSession } = useSession();
+
+  const handleSetup = async () => {
+    await login('google');
+    await createSession({
+      allowedMethods: [
+        { contractAddress: '0x...', selector: 'transfer' },
+        { contractAddress: '0x...', selector: 'approve' },
+      ],
+      expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
+    });
+  };
+
+  if (!hasActiveSession) {
+    return <button onClick={handleSetup}>Setup Wallet</button>;
+  }
+
+  return <TransactionUI />;
+}
+```
 
 ## Basic Transaction
 
+Once a session is active, transactions execute without prompts:
+
 ```tsx
-import { useCavos } from '@cavos/react';
+import { useCavos, useSession } from '@cavos/react';
 
 function TransferButton() {
   const { execute } = useCavos();
+  const { hasActiveSession } = useSession();
 
   const handleTransfer = async () => {
-    const txHash = await execute(
-      {
-        contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
-        entrypoint: 'transfer',
-        calldata: ['0xrecipient', '1000000000000000000', '0'], // 1 ETH
-      },
-      { gasless: true }
-    );
+    // No signature popup! Session key signs automatically
+    const txHash = await execute({
+      contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
+      entrypoint: 'transfer',
+      calldata: ['0xrecipient', '1000000000000000000', '0'],
+    });
 
     console.log('Transaction hash:', txHash);
   };
 
-  return <button onClick={handleTransfer}>Transfer</button>;
+  return (
+    <button onClick={handleTransfer} disabled={!hasActiveSession}>
+      Transfer (Signature-Free)
+    </button>
+  );
 }
 ```
 
@@ -39,31 +77,31 @@ Each call follows the starknet.js `Call` interface:
 ```typescript
 interface Call {
   contractAddress: string;  // Contract to call
-  entrypoint: string;       // Function name
+  entrypoint: string;       // Function name (must be in session policy)
   calldata?: string[];      // Function arguments
 }
 ```
+
+> [!IMPORTANT]
+> The call must match a method in your session policy's `allowedMethods`. Calls to unauthorized methods will fail.
 
 ## Multiple Calls (Multicall)
 
 Execute multiple calls atomically in a single transaction:
 
 ```tsx
-const txHash = await execute(
-  [
-    {
-      contractAddress: tokenAddress,
-      entrypoint: 'approve',
-      calldata: [spenderAddress, amount, '0'],
-    },
-    {
-      contractAddress: dexAddress,
-      entrypoint: 'swap',
-      calldata: [tokenIn, tokenOut, amountIn, minAmountOut],
-    },
-  ],
-  { gasless: true }
-);
+const txHash = await execute([
+  {
+    contractAddress: tokenAddress,
+    entrypoint: 'approve',
+    calldata: [spenderAddress, amount, '0'],
+  },
+  {
+    contractAddress: dexAddress,
+    entrypoint: 'swap',
+    calldata: [tokenIn, tokenOut, amountIn, minAmountOut],
+  },
+]);
 ```
 
 All calls succeed or fail together. This is useful for:
@@ -71,27 +109,65 @@ All calls succeed or fail together. This is useful for:
 - Multi-token transfers
 - Complex DeFi operations
 
-## Gasless vs Paid
+## Gasless by Default
 
-### Gasless (Default for Cavos)
-
-```tsx
-await execute(calls, { gasless: true });
-```
+All transactions through session keys are **gasless**:
 
 - User pays nothing
 - Gas is sponsored by AVNU Paymaster
-- Requires Cavos paymaster API key
-
-### User-Paid Gas
+- No ETH balance required
 
 ```tsx
-await execute(calls, { gasless: false });
+// All of these are gasless:
+await execute({ contractAddress: '...', entrypoint: 'transfer', calldata: [...] });
+await execute([call1, call2, call3]);
 ```
 
-- User pays gas in ETH
-- Wallet must have sufficient ETH balance
-- Standard Starknet transaction
+## Session Policy Enforcement
+
+Transactions are validated against your session policy:
+
+```tsx
+// Session created with:
+const policy = {
+  allowedMethods: [
+    { contractAddress: TOKEN_A, selector: 'transfer' },
+    { contractAddress: TOKEN_A, selector: 'approve' },
+  ],
+  expiresAt: Date.now() + 60 * 60 * 1000,
+};
+
+// ✅ This works (in policy):
+await execute({ contractAddress: TOKEN_A, entrypoint: 'transfer', calldata: [...] });
+
+// ❌ This fails (not in policy):
+await execute({ contractAddress: TOKEN_B, entrypoint: 'transfer', calldata: [...] });
+// Error: "Method transfer on TOKEN_B not allowed by session"
+```
+
+## Error Handling
+
+```tsx
+try {
+  const txHash = await execute(calls);
+  console.log('Success:', txHash);
+} catch (error) {
+  if (error.message.includes('not allowed by session')) {
+    // Call not in session policy
+    console.error('This action is not authorized by your session');
+  } else if (error.message.includes('No active session')) {
+    // Session expired or not created
+    await createSession(policy);
+  } else if (error.message.includes('Session has expired')) {
+    // Re-authenticate and create new session
+    await login('google');
+    await createSession(policy);
+  } else {
+    // Contract execution error
+    console.error('Transaction failed:', error);
+  }
+}
+```
 
 ## Transaction Status
 
@@ -110,72 +186,56 @@ const receipt = await provider.getTransactionReceipt(txHash);
 console.log('Status:', receipt.finality_status);
 ```
 
-## Error Handling
+## Common Patterns
+
+### ERC20 Transfer
 
 ```tsx
-try {
-  const txHash = await execute(calls, { gasless: true });
-  console.log('Success:', txHash);
-} catch (error) {
-  if (error.message.includes('MAU limit')) {
-    // App has exceeded monthly active user limit
-    showUpgradePrompt();
-  } else if (error.message.includes('insufficient')) {
-    // Paymaster quota exceeded or user balance too low
-    showFundingPrompt();
-  } else {
-    // Contract execution error
-    console.error('Transaction failed:', error);
-  }
-}
-```
+const TOKEN_ADDRESS = '0x04718f5a0Fc34cC1AF16A1cdee98fFB20C31f5cD61D6Ab07201858f4287c938D';
 
-## Common Contracts
-
-### ETH Token
-
-```typescript
-const ETH_ADDRESS = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
-
-// Transfer ETH
 await execute({
-  contractAddress: ETH_ADDRESS,
+  contractAddress: TOKEN_ADDRESS,
   entrypoint: 'transfer',
   calldata: [recipientAddress, amountLow, amountHigh], // u256 split
 });
 ```
 
-### ERC20 Token
-
-```typescript
-// Approve spender
-await execute({
-  contractAddress: tokenAddress,
-  entrypoint: 'approve',
-  calldata: [spenderAddress, amountLow, amountHigh],
-});
-
-// Transfer
-await execute({
-  contractAddress: tokenAddress,
-  entrypoint: 'transfer',
-  calldata: [recipientAddress, amountLow, amountHigh],
-});
-```
-
-## Advanced: Direct Account Access
-
-For operations not covered by `execute()`:
+### Approve + Action
 
 ```tsx
-const { cavos } = useCavos();
-
-const account = cavos.getAccount();
-
-// Use starknet.js Account directly
-const result = await account.execute([...calls]);
+await execute([
+  {
+    contractAddress: tokenAddress,
+    entrypoint: 'approve',
+    calldata: [protocolAddress, amount, '0'],
+  },
+  {
+    contractAddress: protocolAddress,
+    entrypoint: 'deposit',
+    calldata: [amount, '0'],
+  },
+]);
 ```
 
-<Note>
-Direct account access bypasses gasless sponsorship. Use `execute({ gasless: true })` for sponsored transactions.
-</Note>
+## Session Lifecycle
+
+| State | `execute()` Behavior |
+|-------|---------------------|
+| No session | Throws "No active session" |
+| Active session | Signs with session key ✅ |
+| Expired session | Throws "Session has expired" |
+| Method not in policy | Throws "not allowed by session" |
+
+To check session state before executing:
+
+```tsx
+const { hasActiveSession } = useSession();
+
+if (!hasActiveSession) {
+  // Prompt user to create session
+  await createSession(policy);
+}
+
+// Now safe to execute
+await execute(calls);
+```

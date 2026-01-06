@@ -44,6 +44,7 @@
           {
             "group": "Advanced",
             "pages": [
+              "advanced/session-keys",
               "advanced/onramp",
               "advanced/message-signing",
               "advanced/security",

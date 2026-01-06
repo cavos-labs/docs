@@ -1,6 +1,6 @@
 ---
 title: "React Hooks"
-description: "CavosProvider and useCavos hook reference"
+description: "useCavos and useSession hook reference"
 ---
 
 ## CavosProvider
@@ -31,16 +31,6 @@ interface CavosConfig {
   };
 }
 ```
-
-### Initialization Behavior
-
-On mount, `CavosProvider`:
-
-1. Checks URL for OAuth callback data
-2. Restores existing OAuth session from storage
-3. Checks for existing passkey-only wallet
-4. Loads wallet if found (prompts for biometric)
-5. Sets authentication and wallet state
 
 ## useCavos Hook
 
@@ -110,23 +100,28 @@ await createWallet();
 
 For passkey-only mode, call this without prior `login()`.
 
-#### execute(calls, options?)
+#### execute(calls)
 
-Execute transactions:
+Execute transactions using session keys:
 
 ```tsx
-const txHash = await execute(
-  { contractAddress, entrypoint, calldata },
-  { gasless: true }
-);
+// Requires active session!
+const txHash = await execute({
+  contractAddress: '0x...',
+  entrypoint: 'transfer',
+  calldata: ['0x...', '1000', '0'],
+});
 ```
 
-#### signMessage(message)
+> [!NOTE]
+> All transactions are signed with the session key and are gasless. No signature prompt appears.
 
-Sign a message:
+#### signMessage(messageHash)
+
+Sign a message with the session key:
 
 ```tsx
-const signature = await signMessage('Hello World');
+const signature = await signMessage('0x123...'); // hex string message hash
 // Returns { r: string, s: string }
 ```
 
@@ -146,94 +141,139 @@ Permanently delete account:
 await deleteAccount();
 ```
 
-#### retryWalletUnlock()
+## useSession Hook
 
-Retry biometric unlock after cancellation:
-
-```tsx
-await retryWalletUnlock();
-```
-
-#### getOnramp(provider)
-
-Get fiat onramp URL:
+Manage session keys for signature-free transactions:
 
 ```tsx
-const url = getOnramp('RAMP_NETWORK');
-window.open(url, '_blank');
-```
+import { useSession } from '@cavos/react';
 
-### SDK Instance
+function SessionManager() {
+  const {
+    hasActiveSession,
+    createSession,
+    clearSession,
+    executeWithSession,
+  } = useSession();
 
-Access the underlying `CavosSDK` for advanced operations:
-
-```tsx
-const { cavos } = useCavos();
-
-// Direct SDK methods
-const account = cavos.getAccount();
-const balance = await cavos.getBalance();
-const isDeployed = await cavos.isAccountDeployed();
-```
-
-## UserInfo Type
-
-```typescript
-interface UserInfo {
-  id: string;       // User ID (social ID or 'passkey-user')
-  email: string;    // Email or 'Passkey Wallet'
-  name?: string;    // Display name
-  picture?: string; // Profile picture URL
+  return <div>Session: {hasActiveSession ? 'Active' : 'Inactive'}</div>;
 }
 ```
 
-## Error Handling
+### Session Properties
 
-The hook throws errors that can be caught in your handlers:
+| Property | Type | Description |
+|----------|------|-------------|
+| `hasActiveSession` | boolean | Session is active and not expired |
+
+### Session Methods
+
+#### createSession(policy)
+
+Create a session with a policy defining allowed actions:
 
 ```tsx
-const { login, createWallet } = useCavos();
+await createSession({
+  allowedMethods: [
+    { contractAddress: '0x...token', selector: 'transfer' },
+    { contractAddress: '0x...token', selector: 'approve' },
+    { contractAddress: '0x...nft', selector: 'mint' },
+  ],
+  expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
+});
+```
 
-const handleLogin = async () => {
-  try {
+> [!IMPORTANT]
+> After `createSession()`, the user's private key is **cleared from memory**. Only the session key remains.
+
+#### clearSession()
+
+Invalidate the current session:
+
+```tsx
+clearSession();
+```
+
+#### executeWithSession(calls)
+
+Execute transactions with the session key:
+
+```tsx
+const txHash = await executeWithSession({
+  contractAddress: '0x...',
+  entrypoint: 'transfer',
+  calldata: ['0x...', '1000', '0'],
+});
+```
+
+## Complete Example
+
+```tsx
+import { useCavos, useSession } from '@cavos/react';
+
+function App() {
+  const { login, logout, address, isAuthenticated } = useCavos();
+  const { hasActiveSession, createSession } = useSession();
+
+  const handleSetup = async () => {
+    // 1. Authenticate
     await login('google');
-  } catch (error) {
-    // Handle login error
-    console.error('Login failed:', error.message);
-  }
-};
+    
+    // 2. Create session (user signs once)
+    await createSession({
+      allowedMethods: [
+        { contractAddress: TOKEN_ADDRESS, selector: 'transfer' },
+      ],
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    });
+    
+    // ✓ Ready for signature-free transactions
+  };
 
-const handleCreate = async () => {
-  try {
-    await createWallet();
-  } catch (error) {
-    if (error.message.includes('cancelled')) {
-      // User cancelled passkey
-    } else if (error.message.includes('MAU limit')) {
-      // App limit reached
-    }
+  const handleTransfer = async () => {
+    const { execute } = useCavos();
+    
+    // No signature popup!
+    const txHash = await execute({
+      contractAddress: TOKEN_ADDRESS,
+      entrypoint: 'transfer',
+      calldata: [recipient, amount, '0'],
+    });
+  };
+
+  if (!isAuthenticated) {
+    return <button onClick={handleSetup}>Login</button>;
   }
-};
+
+  return (
+    <div>
+      <p>Address: {address}</p>
+      <p>Session: {hasActiveSession ? '✅ Active' : '❌ Create session first'}</p>
+      <button onClick={handleTransfer} disabled={!hasActiveSession}>
+        Transfer
+      </button>
+      <button onClick={logout}>Logout</button>
+    </div>
+  );
+}
 ```
 
-## Passkey Modal
+## Session Policy Reference
 
-The provider includes a built-in modal for wallet creation. It appears when:
-
-- `requiresWalletCreation` is true
-- User authenticated via OAuth but has no wallet
-
-Customize via config:
-
-```tsx
-<CavosProvider
-  config={{
-    appId: 'your-app-id',
-    passkeyModal: {
-      title: 'Secure Your Wallet',
-      description: 'Enable biometric protection',
-      buttonText: 'Create Passkey',
-    },
-  }}
->
+```typescript
+interface SessionPolicy {
+  allowedMethods: Array<{
+    contractAddress: string;  // Contract address (hex)
+    selector: string;         // Function name
+  }>;
+  expiresAt: number;          // Timestamp in milliseconds
+  metadata?: string;          // Optional metadata
+}
 ```
+
+### Best Practices
+
+1. **Limit scope**: Only include methods your app actually needs
+2. **Short expiration**: Use 1 hour or less for sensitive operations
+3. **Re-create on demand**: Create new sessions when needed rather than long-lived ones
+4. **Check before execute**: Always verify `hasActiveSession` before `execute()`

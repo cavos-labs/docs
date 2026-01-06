@@ -52,76 +52,131 @@ export default function RootLayout({ children }) {
 }
 ```
 
-### 2. Add Login Button
+### 2. Login and Create Session
 
-Use the `useCavos` hook to access authentication and wallet functions:
+Users authenticate once and a session is created automatically:
 
 ```tsx
 'use client';
-import { useCavos } from '@cavos/react';
+import { useCavos, useSession } from '@cavos/react';
+
+// Define what the session can do
+const SESSION_POLICY = {
+  allowedMethods: [
+    { contractAddress: '0x...your-contract', selector: 'transfer' },
+    { contractAddress: '0x...your-contract', selector: 'approve' },
+  ],
+  expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
+};
 
 export function LoginButton() {
   const { login, isAuthenticated, address, isLoading } = useCavos();
+  const { createSession, hasActiveSession } = useSession();
 
-  if (isLoading) {
-    return <button disabled>Loading...</button>;
-  }
+  const handleLogin = async () => {
+    // 1. Authenticate user
+    await login('google');
+    
+    // 2. Create session (user signs once here)
+    await createSession(SESSION_POLICY);
+    
+    // ✓ Private key is now cleared from memory
+    // ✓ All future transactions use session key
+  };
+
+  if (isLoading) return <button disabled>Loading...</button>;
 
   if (isAuthenticated && address) {
     return (
       <div>
-        Connected: {address.slice(0, 6)}...{address.slice(-4)}
+        <p>Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>
+        <p>Session: {hasActiveSession ? '✅ Active' : '❌ Inactive'}</p>
       </div>
     );
   }
 
   return (
-    <button onClick={() => login('google')}>
+    <button onClick={handleLogin}>
       Login with Google
     </button>
   );
 }
 ```
 
-### 3. Execute Transactions
+### 3. Execute Transactions (No Signature Required)
 
-Send gasless transactions with a single function call:
+After session creation, all transactions are signed automatically:
 
 ```tsx
-import { useCavos } from '@cavos/react';
+import { useCavos, useSession } from '@cavos/react';
 
 function TransferButton() {
-  const { execute, address } = useCavos();
+  const { execute } = useCavos();
+  const { hasActiveSession } = useSession();
 
   const handleTransfer = async () => {
-    const txHash = await execute(
-      {
-        contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
-        entrypoint: 'transfer',
-        calldata: [recipientAddress, amount, '0'],
-      },
-      { gasless: true }
-    );
+    // No wallet popup! Session key signs automatically
+    const txHash = await execute({
+      contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
+      entrypoint: 'transfer',
+      calldata: [recipientAddress, amount, '0'],
+    });
     console.log('Transaction:', txHash);
   };
 
-  return <button onClick={handleTransfer}>Send</button>;
+  return (
+    <button onClick={handleTransfer} disabled={!hasActiveSession}>
+      {hasActiveSession ? 'Send (Signature-Free)' : 'Create Session First'}
+    </button>
+  );
 }
+```
+
+## The Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant SDK as Cavos SDK
+    participant PK as Private Key
+    participant SK as Session Key
+    participant Chain as Blockchain
+
+    U->>SDK: 1. login('google')
+    SDK->>PK: Decrypt with passkey
+    PK-->>SDK: Available temporarily
+    
+    U->>SDK: 2. createSession(policy)
+    SDK->>PK: Sign session token
+    PK-->>SDK: Authorization signature
+    SDK->>SK: Generate session keypair
+    SDK-xPK: Clear from memory
+    
+    U->>SDK: 3. execute(tx)
+    SDK->>SK: Sign with session key
+    SK-->>Chain: Gasless transaction ✓
+    
+    U->>SDK: 4. execute(tx)
+    SDK->>SK: Sign with session key
+    SK-->>Chain: Gasless transaction ✓
+    
+    Note over PK: PK cleared after step 2
+    Note over SK: Session expires in 1 hour
 ```
 
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Authentication" icon="key" href="/web/authentication">
+  <Card title="Session Keys" icon="key" href="/concepts">
+    Understand how session keys work and their security model.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/web/authentication">
     Learn about OAuth and passkey-only flows.
   </Card>
-  <Card title="Wallet Management" icon="wallet" href="/web/wallet-management">
-    Create, load, and recover wallets.
-  </Card>
   <Card title="Transactions" icon="paper-plane" href="/web/transactions">
-    Execute gasless transactions.
+    Execute gasless transactions with session keys.
   </Card>
   <Card title="React Hooks" icon="react" href="/web/react-hooks">
-    Full CavosProvider and useCavos API.
+    Full useCavos and useSession API reference.
   </Card>
 </CardGroup>

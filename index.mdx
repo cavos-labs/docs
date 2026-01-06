@@ -8,8 +8,11 @@ Cavos provides invisible wallet infrastructure for Starknet applications. Users 
 ## Key Features
 
 <CardGroup cols={2}>
+  <Card title="Session Keys" icon="key">
+    Sign once, transact infinitely. Users authenticate once and all subsequent transactions are signed automatically without prompts.
+  </Card>
   <Card title="Passkey Security" icon="fingerprint">
-    Private keys are encrypted with device biometrics (FaceID/TouchID) and never leave the user's device unencrypted.
+    Private keys are encrypted with device biometrics (FaceID/TouchID) and used only for session creation.
   </Card>
   <Card title="Gasless Transactions" icon="bolt">
     Users can transact without holding ETH. All gas fees are sponsored via AVNU Paymaster.
@@ -17,10 +20,19 @@ Cavos provides invisible wallet infrastructure for Starknet applications. Users 
   <Card title="Cross-Platform" icon="devices">
     SDKs for both web (React) and mobile (React Native) with unified APIs.
   </Card>
-  <Card title="OAuth Integration" icon="key">
-    Support for Google and Apple sign-in with automatic wallet creation.
-  </Card>
 </CardGroup>
+
+## How Session Keys Work
+
+Cavos uses **session keys** as the core transaction signing mechanism:
+
+1. **User authenticates** with Google, Apple, or a passkey
+2. **Session is created** automatically with a temporary keypair (valid for 1 hour)
+3. **Private key is cleared** from memory immediately after session creation
+4. **All transactions** are signed with the session key - no additional prompts needed
+
+> [!NOTE]
+> The user's private key is only used once to authorize the session. After that, it's removed from memory for maximum security.
 
 ## Choose Your Platform
 
@@ -33,33 +45,54 @@ Cavos provides invisible wallet infrastructure for Starknet applications. Users 
   </Card>
 </Columns>
 
-## How It Works
-
-1. **User authenticates** with Google, Apple, or a passkey
-2. **Wallet is created** automatically with an ArgentX-compatible account
-3. **Wallet is deployed** gaslessly using AVNU Paymaster
-4. **Transactions execute** without users needing to hold ETH
-
 ## Quick Example
 
 ```tsx
-import { CavosProvider, useCavos } from '@cavos/react';
+import { CavosProvider, useCavos, useSession } from '@cavos/react';
 
 function App() {
   return (
     <CavosProvider config={{ appId: 'your-app-id' }}>
-      <WalletButton />
+      <WalletDemo />
     </CavosProvider>
   );
 }
 
-function WalletButton() {
+function WalletDemo() {
   const { login, address, execute } = useCavos();
+  const { hasActiveSession, createSession } = useSession();
 
-  if (address) {
-    return <p>Connected: {address}</p>;
+  // After login, create a session to enable signature-free transactions
+  const handleLogin = async () => {
+    await login('google');
+    await createSession({
+      allowedMethods: [
+        { contractAddress: '0x...', selector: 'transfer' },
+      ],
+      expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
+    });
+  };
+
+  if (!address) {
+    return <button onClick={handleLogin}>Login with Google</button>;
   }
 
-  return <button onClick={() => login('google')}>Login with Google</button>;
+  // Transactions are signed automatically with the session key
+  const handleTransfer = async () => {
+    const txHash = await execute({
+      contractAddress: '0x...',
+      entrypoint: 'transfer',
+      calldata: ['0x...', '1000000000000000000', '0'],
+    });
+    console.log('Transaction:', txHash);
+  };
+
+  return (
+    <div>
+      <p>Connected: {address}</p>
+      <p>Session: {hasActiveSession ? 'Active' : 'Inactive'}</p>
+      <button onClick={handleTransfer}>Send (No Signature)</button>
+    </div>
+  );
 }
 ```

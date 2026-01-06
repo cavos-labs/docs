@@ -1,7 +1,68 @@
 ---
 title: "Core Concepts"
-description: "Understanding passkeys, gasless transactions, and account abstraction"
+description: "Understanding session keys, passkeys, and gasless transactions"
 ---
+
+## Session Keys (Core)
+
+Session keys are the **foundation** of Cavos's transaction signing. They provide a seamless user experience by eliminating repeated signature prompts.
+
+### How It Works
+
+```mermaid
+flowchart LR
+    subgraph step1["1. LOGIN"]
+        A["User Authenticates<br/>(Google/Apple/Passkey)"]
+    end
+    
+    subgraph step2["2. CREATE SESSION"]
+        B["Sign Once with PK<br/>to authorize session"]
+    end
+    
+    subgraph step3["3. TRANSACT"]
+        C["All transactions use<br/>session key"]
+    end
+    
+    A -->|"PK decrypted<br/>temporarily"| B
+    B -->|"Session key<br/>created"| C
+    B -->|"PK CLEARED"| D["Memory + Storage"]
+    
+    style step1 fill:#f9f9f9,stroke:#333
+    style step2 fill:#f9f9f9,stroke:#333
+    style step3 fill:#e6ffe6,stroke:#333
+    style D fill:#ffe6e6,stroke:#333
+```
+
+### Session Policy
+
+Each session has a **policy** that defines what actions it can perform:
+
+```typescript
+const sessionPolicy = {
+  allowedMethods: [
+    { contractAddress: '0x...token', selector: 'transfer' },
+    { contractAddress: '0x...token', selector: 'approve' },
+    { contractAddress: '0x...nft', selector: 'mint' },
+  ],
+  expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
+};
+```
+
+- **allowedMethods**: Specific contract + function combinations the session can call
+- **expiresAt**: When the session expires (default: 1 hour)
+
+### Security Model
+
+| Aspect | Behavior |
+|--------|----------|
+| Private Key | Used ONLY for session creation, then cleared |
+| Session Key | Stored in browser sessionStorage |
+| Scope | Limited to allowedMethods in policy |
+| Expiration | Auto-expires after defined time |
+| Revocation | User can clear session at any time |
+
+> [!IMPORTANT]
+> After session creation, the user's private key is **permanently removed** from memory. The `execute()` method cannot access it - only session keys can sign transactions.
 
 ## Passkeys (WebAuthn)
 
@@ -16,8 +77,8 @@ Passkeys are a modern authentication standard that replaces passwords with devic
 Cavos uses the WebAuthn PRF (Pseudo-Random Function) extension to derive an encryption key from the passkey. This key encrypts the wallet's private key:
 
 - **At rest**: Private key is encrypted with AES-GCM using the passkey-derived key
-- **In use**: Private key is decrypted only after successful biometric authentication
-- **Storage**: Encrypted private key is stored in the backend for cross-device recovery
+- **In use**: Private key is decrypted only during session creation
+- **After session**: Private key is immediately cleared from memory
 
 ### Benefits
 
@@ -28,22 +89,23 @@ Cavos uses the WebAuthn PRF (Pseudo-Random Function) extension to derive an encr
 
 ## Gasless Transactions
 
-Traditional blockchain transactions require users to hold the native token (ETH) to pay gas fees. Cavos eliminates this friction using **account abstraction** and **paymasters**.
+All transactions through Cavos are **gasless by default**. Users never need to hold ETH.
 
 ### How It Works
 
-1. User initiates a transaction
-2. SDK builds the transaction and sends it to AVNU Paymaster
+1. User initiates a transaction via `execute()`
+2. SDK signs with session key and sends to AVNU Paymaster
 3. Paymaster sponsors the gas fee
 4. Transaction is executed on-chain
-5. User's wallet never needs to hold ETH
 
 ### AVNU Paymaster
 
-Cavos uses AVNU's paymaster infrastructure. Each Cavos app receives:
+Cavos uses AVNU's paymaster infrastructure:
 
-- **Sepolia**: Shared paymaster (free for testing)
-- **Mainnet**: Configurable paymaster with billing through Cavos dashboard
+| Network | Paymaster | Cost |
+|---------|-----------|------|
+| Starknet Sepolia | Shared | Free |
+| Starknet Mainnet | Per-app | Paid via dashboard |
 
 ## Account Abstraction (AA)
 
@@ -55,8 +117,8 @@ Account Class Hash: 0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff
 
 ### Account Features
 
+- **Session Support**: Native session key integration via Argent's session library
 - **Upgradeable**: Account logic can be upgraded
-- **Guardian support**: Optional security guardian (disabled by default in Cavos)
 - **Multi-call**: Execute multiple transactions atomically
 
 ### Deployment
@@ -65,33 +127,21 @@ Accounts are deployed lazily when first used. Cavos handles this automatically:
 
 1. On wallet creation, the account address is computed deterministically
 2. The account can receive funds before deployment
-3. On first use (or automatically), the account is deployed via paymaster
+3. On first transaction, the account is deployed via paymaster
 
 ## Authentication Flows
 
 ### OAuth + Passkey (Recommended)
 
-Best for apps that want user identity:
-
 ```
-User -> Google/Apple OAuth -> Identity Verified -> Passkey Registration -> Wallet Created
+User → Google/Apple OAuth → Identity Verified → Passkey Registration → Wallet Created → Session Created
 ```
-
-- User has a social identity (email, name)
-- Wallet is linked to social account
-- Recovery possible via same social login + passkey
 
 ### Passkey-Only (Anonymous)
 
-Best for privacy-focused apps:
-
 ```
-User -> Passkey Registration -> Anonymous Wallet Created
+User → Passkey Registration → Anonymous Wallet Created → Session Created
 ```
-
-- No identity collection
-- User is identified only by passkey
-- Recovery via passkey sync (iCloud/Google)
 
 ## Network Support
 
