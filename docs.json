@@ -8,12 +8,29 @@
     "dark": "#1E1E1E"
   },
   "favicon": "/favicon.ico",
-  "metadata": {
-    "og:image": "https://docs.cavos.xyz/images/og-image.png",
-    "og:site_name": "Cavos Documentation",
-    "og:title": "Cavos - OAuth for Blockchain",
-    "og:description": "Invisible wallet infrastructure with session keys, gasless transactions, and passkey security.",
-    "twitter:card": "summary_large_image"
+  "seo": {
+    "metatags": [
+      {
+        "property": "og:image",
+        "content": "https://docs.cavos.xyz/images/og-image.png"
+      },
+      {
+        "property": "og:site_name",
+        "content": "Cavos Documentation"
+      },
+      {
+        "property": "og:title",
+        "content": "Cavos - OAuth for Blockchain"
+      },
+      {
+        "property": "og:description",
+        "content": "Create your blockchain app in minutes."
+      },
+      {
+        "name": "twitter:card",
+        "content": "summary_large_image"
+      }
+    ]
   },
   "navigation": {
     "tabs": [
