@@ -5,121 +5,159 @@ description: "Understanding Cavos security model"
 
 ## Security Architecture
 
-Cavos uses a layered security model combining passkey encryption, secure storage, and backend backup.
+Cavos uses a **non-custodial OAuth-based wallet** architecture. Users authenticate with their existing identity providers (Google, Apple, Firebase) and Cavos derives a unique wallet address from their verified identity—without ever storing private keys on a server.
 
-## Private Key Protection
+## How It Works
 
-### Encryption at Rest
+### Wallet Derivation
 
-Private keys are never stored in plaintext:
+```
+wallet_address = Contract(Poseidon(user_sub, app_salt), class_hash, registry)
+```
 
-| Platform | Encryption | Storage |
-|----------|------------|---------|
-| Web | AES-GCM with PRF-derived key | Backend API |
-| React Native | AES-GCM with PRF-derived key | SecureStore + Backend |
+| Component | Description |
+|-----------|-------------|
+| `user_sub` | OAuth subject claim (unique per user per provider) |
+| `app_salt` | Per-app salt derived from your App ID |
+| `class_hash` | Cavos Account contract class hash |
+| `registry` | JWKS registry address for JWT verification |
 
-### Encryption Flow
+<Info>
+The wallet address is **deterministic**—same user + same app always produces the same wallet. No private key storage required.
+</Info>
 
-1. User authenticates with passkey (FaceID/TouchID)
-2. WebAuthn PRF extension derives a 256-bit key
-3. Private key is encrypted with AES-GCM
-4. Encrypted blob is stored on backend
-5. PRF key is never stored (derived on-demand)
+### Session Keys (Ephemeral Keys)
 
-### PRF (Pseudo-Random Function)
+Instead of storing master private keys, Cavos uses short-lived **session keys**:
 
-The PRF extension provides deterministic key derivation:
-- Same passkey always produces same encryption key
-- Key is different for each passkey
-- No server-side secret required
+1. **Session Creation**: SDK generates a fresh ephemeral key pair on each login
+2. **JWT Binding**: The ephemeral public key is embedded in the JWT nonce
+3. **On-chain Registration**: The smart contract verifies the JWT and registers the session key
+4. **Transaction Signing**: All transactions are signed with the ephemeral key
 
-## Platform-Specific Security
+```
+┌─────────────┐     ┌───────────────┐     ┌──────────────┐
+│ Google JWT  │ ──► │ Cavos Account │ ──► │ Session Key  │
+│ (proof)     │     │ (verifies)    │     │ (signs txs)  │
+└─────────────┘     └───────────────┘     └──────────────┘
+```
 
-### Web SDK
+### Session Expiration
 
-| Concern | Mitigation |
-|---------|------------|
-| XSS | Private keys only decrypted on user action |
-| Session hijacking | Keys cleared on logout |
-| Man-in-the-middle | HTTPS + passkey domain binding |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `sessionDuration` | ~24 hours | Blocks until session expires |
+| `renewalGracePeriod` | ~24 hours | Window to renew before expiry |
 
-**Session Storage**: Decrypted keys may be cached in `sessionStorage` for UX. This trades security for convenience.
+Sessions can be renewed with a fresh JWT before expiration.
 
-### React Native SDK
+## Per-App Wallet Isolation
 
-| Concern | Mitigation |
-|---------|------------|
-| Root/Jailbreak | SecureStore uses OS keychain |
-| App tampering | Passkey bound to bundle ID |
-| Backup extraction | Encrypted with passkey key |
+Each app registered on Cavos gets its own **app salt**, ensuring:
 
-**SecureStore**: Uses iOS Keychain / Android Keystore, which provides:
-- Hardware-backed encryption
-- Per-app isolation
-- Biometric protection option
+- Same user on different apps = **different wallet addresses**
+- Apps cannot access each other's user funds
+- Users maintain separate identities per app
 
-## Backend Security
+```typescript
+// App A wallet for user@gmail.com
+0x1234...abc
 
-### What Cavos Stores
+// App B wallet for user@gmail.com (same user, different wallet)
+0x5678...def
+```
 
-| Data | Encrypted | Purpose |
-|------|-----------|---------|
-| Encrypted private key | Yes (AES-GCM) | Cross-device recovery |
-| Wallet address | No | User lookup |
-| Passkey credential ID | No | Wallet association |
-| OAuth identity | No | User mapping |
+## What Cavos Stores vs Doesn't Store
+
+| Data | Stored? | Notes |
+|------|---------|-------|
+| Private keys | ❌ Never | Derived client-side only |
+| OAuth tokens | ❌ Never | JWT verified and discarded |
+| User sub (ID) | ✅ Hashed | For MAU tracking only |
+| Wallet address | ✅ Public | For analytics |
 
 ### What Cavos Cannot Do
 
-- Decrypt private keys (no PRF key access)
-- Sign transactions on behalf of users
-- Access funds without user biometric
+- **Access user funds**: No private keys stored anywhere
+- **Sign transactions**: Only users with valid OAuth JWTs can sign
+- **Impersonate users**: JWTs are verified on-chain via JWKS registry
 
-## Attack Vectors
+## On-Chain Verification
 
-### Passkey Compromise
+The Cavos Account smart contract verifies every transaction:
 
-If an attacker gains access to user's passkey:
-- They can decrypt and use the wallet
-- Mitigated by device biometric requirement
-- Passkeys can be revoked via iCloud/Google account
+1. **JWT Signature**: Verified against Google/Apple JWKS public keys stored on-chain
+2. **Nonce Validation**: Ensures JWT was issued for this specific session
+3. **Expiration Check**: JWT and session must be within validity period
+4. **Session Key**: Ephemeral key must match JWT-registered session
 
-### Backend Breach
+```cairo
+// Simplified verification flow
+fn validate_transaction(jwt, session_sig) {
+    verify_jwt_signature(jwt, jwks_registry);
+    verify_nonce_matches(jwt.nonce, session.ephemeral_pub);
+    verify_session_not_expired(session.max_block);
+    verify_ecdsa_signature(session_sig, session.ephemeral_pub);
+}
+```
 
-If Cavos servers are compromised:
-- Attacker gets encrypted blobs
-- Cannot decrypt without passkey
-- Would need to brute-force AES-256
+## Attack Vectors & Mitigations
 
-### XSS on Web
+### OAuth Provider Compromise
+
+If Google/Apple's signing keys are compromised:
+- **Risk**: Attacker could forge JWTs
+- **Mitigation**: JWKS registry on-chain; Cavos monitors and updates
+- **Mitigation**: Session bound to specific ephemeral key generated client-side
+
+### Browser XSS
 
 If attacker injects JavaScript:
-- May access session-cached keys
-- Mitigation: Content Security Policy
-- Mitigation: Clear cache on sensitive operations
+- **Risk**: Could access ephemeral key in session storage
+- **Mitigation**: Session keys are short-lived (~24h)
+- **Mitigation**: Session bound to specific JWT claims
+- **Mitigation**: Implement Content Security Policy
+
+### Backend Compromise
+
+If Cavos servers are compromised:
+- **Risk**: Attacker could return malicious app_salt
+- **Mitigation**: app_salt is deterministic from app_id—users would notice different wallet
+- **Mitigation**: No private keys stored to steal
+
+### Man-in-the-Middle
+
+- **Mitigation**: All API calls over HTTPS
+- **Mitigation**: JWT signature verification is on-chain (cannot be spoofed)
 
 ## Best Practices
 
 ### For Developers
 
-1. Use HTTPS everywhere
-2. Implement Content Security Policy
-3. Validate all user inputs
-4. Set appropriate session timeouts
-5. Clear sensitive data on logout
+1. **Use HTTPS everywhere**
+2. **Implement Content Security Policy** to prevent XSS
+3. **Validate all user inputs** before contract calls
+4. **Don't expose appId secrets** in client-side code (appId is public, but don't commit env files)
+5. **Monitor your MAU usage** via dashboard
 
 ### For Users
 
-1. Use strong device passcode
-2. Enable biometric authentication
-3. Keep device OS updated
-4. Don't use on shared devices
-5. Review connected devices in iCloud/Google
+1. **Protect your OAuth account** (Google/Apple) with 2FA
+2. **Review connected sessions** periodically
+3. **Use on trusted devices** only
+4. **Check transaction details** before signing
 
 ## Compliance Notes
 
-Cavos wallet infrastructure:
-- Non-custodial (users control keys)
-- Encrypted at rest
-- No access to plaintext keys
-- User-initiated transactions only
+Cavos wallet infrastructure is:
+
+| Aspect | Status |
+|--------|--------|
+| Non-custodial | ✅ Users control their own wallets |
+| No key storage | ✅ Private keys never stored server-side |
+| User-initiated only | ✅ All transactions require active user auth |
+| Auditable | ✅ All verification logic is on-chain |
+
+<Warning>
+This documentation describes the OAuth-based wallet architecture. Cavos does not hold custody of any user funds.
+</Warning>

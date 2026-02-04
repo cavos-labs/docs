@@ -53,9 +53,10 @@
           {
             "group": "Advanced",
             "pages": [
-              "advanced/session-keys",
+              "advanced/ephemeral-keys",
               "advanced/onramp",
               "advanced/message-signing",
+              "advanced/email-customization",
               "advanced/security",
               "advanced/error-handling"
             ]

@@ -7,10 +7,10 @@ description: "Common errors and troubleshooting"
 
 | Category | Examples |
 |----------|----------|
-| Authentication | Email not verified, invalid credentials, OAuth failed |
-| Email Verification | Rate limited, token expired, already verified |
-| Wallet | No wallet found, creation failed |
-| Transaction | Execution failed, insufficient funds |
+| Authentication | OAuth failed, invalid credentials, email not verified |
+| Session | Session expired, no session found, nonce mismatch |
+| Wallet | Account not deployed, insufficient funds |
+| Transaction | Execution failed, paymaster error |
 | Network | RPC errors, timeout |
 | Limits | MAU exceeded |
 
@@ -27,10 +27,7 @@ try {
   await login('firebase', { email, password });
 } catch (error) {
   if (error.name === 'EmailNotVerifiedError') {
-    // Error object contains the email
     console.log('Unverified email:', error.email);
-
-    // Show resend verification button
     showResendVerificationButton(error.email);
   }
 }
@@ -64,18 +61,6 @@ try {
 }
 ```
 
-### Weak Password
-
-```tsx
-try {
-  await register('firebase', { email, password });
-} catch (error) {
-  if (error.message?.includes('auth/weak-password')) {
-    showMessage('Password must be at least 6 characters');
-  }
-}
-```
-
 ### OAuth Failed (Google/Apple)
 
 ```tsx
@@ -83,11 +68,64 @@ try {
   await login('google');
 } catch (error) {
   if (error.message.includes('popup')) {
-    // Popup blocked
     showMessage('Please allow popups for authentication');
   } else if (error.message.includes('cancelled')) {
-    // User closed OAuth window
     showMessage('Login cancelled');
+  } else if (error.message.includes('nonce')) {
+    // Nonce mismatch - session state corrupted
+    showMessage('Authentication error. Please try again.');
+  }
+}
+```
+
+## Session Errors
+
+### No Session Found
+
+When trying to execute transactions without a valid session:
+
+```tsx
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('No session') || 
+      error.message.includes('not initialized')) {
+    // Re-authenticate
+    await login('google');
+  }
+}
+```
+
+### Session Expired
+
+Session has exceeded its `maxBlock`:
+
+```tsx
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('Session expired') ||
+      error.message.includes('expired')) {
+    // Renew the session with fresh JWT
+    await renewSession();
+    // Retry the operation
+    await execute(calls);
+  }
+}
+```
+
+### JWT Nonce Mismatch
+
+Happens if session state was corrupted or replayed:
+
+```tsx
+try {
+  await handleCallback(authData);
+} catch (error) {
+  if (error.message.includes('nonce')) {
+    // Clear corrupted state and retry
+    sessionStorage.clear();
+    await login('google');
   }
 }
 ```
@@ -96,14 +134,11 @@ try {
 
 ### Rate Limited
 
-When trying to send verification emails too frequently:
-
 ```tsx
 try {
   await cavos.resendVerificationEmail(email);
 } catch (error) {
   if (error.error === 'rate_limited') {
-    // Registration: 60 seconds between emails
     showMessage(`Please wait ${error.wait_seconds} seconds before trying again`);
   }
 }
@@ -123,79 +158,75 @@ try {
 
 ### Verification Token Expired
 
-When a user clicks an expired verification link (>24 hours old):
-
 ```tsx
-// User is redirected to your app with ?status=error&message=...
-// Handle in your callback page:
-
+// Handle in your callback page
 const searchParams = new URLSearchParams(window.location.search);
 if (searchParams.get('status') === 'error') {
   const message = searchParams.get('message');
   if (message?.includes('expired')) {
     showMessage('Verification link expired. Request a new one.');
-    showResendButton();
-  }
-}
-```
-
-### Invalid Verification Token
-
-```tsx
-// Similar handling for invalid/used tokens
-if (searchParams.get('status') === 'error') {
-  const message = searchParams.get('message');
-  if (message?.includes('invalid') || message?.includes('used')) {
-    showMessage('Invalid verification link. Request a new one.');
   }
 }
 ```
 
 ## Wallet Errors
 
-### No Wallet Found
+### Account Not Deployed
 
 ```tsx
 try {
-  await loadWallet();
+  await execute(calls);
 } catch (error) {
-  if (error.message === 'No wallet found') {
-    // User doesn't have a wallet yet
-    showCreateWalletPrompt();
+  if (error.message.includes('not deployed')) {
+    // Deploy the account first
+    await deployAccount();
+    await execute(calls);
   }
 }
 ```
 
-### Wallet Already Exists
+<Info>
+In most cases, account deployment happens automatically on first transaction. This error typically means the first transaction failed.
+</Info>
 
-When trying to create a wallet that exists:
-- `createWallet()` automatically recovers
-- No error thrown, existing wallet loaded
+### Address Seed Mismatch
+
+Happens when the salt or identity doesn't match expected values:
+
+```tsx
+try {
+  await handleCallback(authData);
+} catch (error) {
+  if (error.message.includes('Address seed mismatch')) {
+    // Identity verification failed - clear and retry
+    await logout();
+    await login('google');
+  }
+}
+```
 
 ### MAU Limit Exceeded
 
 ```tsx
 try {
-  await createWallet();
+  await login('google');
 } catch (error) {
   if (error.message.includes('MAU limit')) {
-    showMessage('App limit reached. Please try later.');
+    showMessage('App has reached its user limit. Please try later or upgrade plan.');
   }
 }
 ```
 
 ## Transaction Errors
 
-### Not Initialized
+### Paymaster Error
 
 ```tsx
 try {
   await execute(calls);
 } catch (error) {
-  if (error.message.includes('not initialized')) {
-    // Need to create/load wallet first
-    await createWallet();
-    await execute(calls);
+  if (error.message.includes('paymaster')) {
+    showMessage('Transaction sponsorship failed. Please try again.');
   }
 }
 ```
@@ -204,23 +235,15 @@ try {
 
 ```tsx
 try {
-  await execute(calls, { gasless: true });
+  await execute(calls);
 } catch (error) {
-  // Parse Starknet error
-  console.error('Transaction failed:', error.message);
-  // Common: "Contract not found", "Entry point not found"
-}
-```
-
-### Paymaster Error
-
-```tsx
-try {
-  await execute(calls, { gasless: true });
-} catch (error) {
-  if (error.message.includes('paymaster')) {
-    // Fallback to paid transaction
-    await execute(calls, { gasless: false });
+  // Common Starknet errors
+  if (error.message.includes('Contract not found')) {
+    showMessage('Contract does not exist on this network');
+  } else if (error.message.includes('Entry point not found')) {
+    showMessage('Function does not exist on this contract');
+  } else if (error.message.includes('insufficient')) {
+    showMessage('Insufficient balance for this operation');
   }
 }
 ```
@@ -240,43 +263,15 @@ try {
 }
 ```
 
-### Rate Limited
+### Custom RPC
 
-If using default Cavos RPC and hitting limits:
+If hitting rate limits on default RPC:
 
 ```tsx
 const config = {
   appId: 'your-app-id',
-  starknetRpcUrl: 'https://your-own-rpc.com',  // Use own RPC
+  starknetRpcUrl: 'https://your-own-rpc.com',  // Use your own RPC
 };
-```
-
-## React Native Specific
-
-### Domain Association Failed
-
-```
-Error: No matching passkeys found
-```
-
-Solutions:
-1. Check rpId matches hosted files
-2. Verify AASA/assetlinks content
-3. Rebuild app after config change
-4. Check associated domains entitlement
-
-### SecureStore Errors
-
-```tsx
-try {
-  await loadWallet();
-} catch (error) {
-  if (error.message.includes('SecureStore')) {
-    // Storage issue, may need to clear and recreate
-    await clearWallet();
-    showMessage('Please create a new wallet');
-  }
-}
 ```
 
 ## Debugging
@@ -284,44 +279,49 @@ try {
 ### Enable Logging
 
 ```tsx
-const config = {
+<CavosProvider config={{
   appId: 'your-app-id',
-  enableLogging: true,  // Console logs from SDK
-};
+  enableLogging: true,  // Shows SDK debug logs
+}}>
 ```
 
 ### Check Wallet State
 
 ```tsx
-const { cavos } = useCavos();
+const { isAuthenticated, address, walletStatus } = useCavos();
 
-console.log('Address:', cavos.getAddress());
-console.log('Authenticated:', cavos.isAuthenticated());
-console.log('Has wallet:', await cavos.hasWallet());
-console.log('Is deployed:', await cavos.isAccountDeployed());
+console.log('Address:', address);
+console.log('Authenticated:', isAuthenticated);
+console.log('Wallet status:', walletStatus);
+// { isDeploying, isDeployed, isRegistering, isSessionActive, isReady }
 ```
 
 ## Error Recovery Flow
 
 ```tsx
-async function handleError(error, operation) {
+async function handleError(error: Error): { action: string; message: string } {
+  // User action needed
   if (error.message.includes('cancelled')) {
-    // User action needed
-    return { action: 'retry', message: 'Please authenticate' };
+    return { action: 'retry', message: 'Please complete authentication' };
   }
   
+  // Session issues
+  if (error.message.includes('expired') || error.message.includes('No session')) {
+    return { action: 'reauth', message: 'Session expired. Please login again.' };
+  }
+  
+  // App limit
   if (error.message.includes('MAU limit')) {
-    // App limit
-    return { action: 'wait', message: 'Limit reached' };
+    return { action: 'wait', message: 'App limit reached' };
   }
   
-  if (error.message.includes('network')) {
-    // Network issue
-    return { action: 'retry', message: 'Network error' };
+  // Network issue
+  if (error.message.includes('network') || error.message.includes('timeout')) {
+    return { action: 'retry', message: 'Network error. Retrying...' };
   }
   
   // Unknown error
-  console.error(`${operation} failed:`, error);
-  return { action: 'support', message: 'Please contact support' };
+  console.error('Unhandled error:', error);
+  return { action: 'support', message: 'An error occurred. Please contact support.' };
 }
 ```
