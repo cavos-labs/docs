@@ -1,0 +1,300 @@
+---
+title: "Email Customization"
+description: "Customize verification emails for your app"
+---
+
+## Overview
+
+When users register with email/password in your app, Cavos sends them a verification email. You can customize these emails from the dashboard to match your brand.
+
+## What You Can Customize
+
+### 1. App Information
+
+**App Name:**
+- Used in the email subject and content
+- Default: Your app name from dashboard
+- Placeholder: `{{app_name}}`
+
+**App Logo:**
+- Displayed at the top of the email
+- Upload an image or provide a URL
+- Recommended size: 64x64px
+- Placeholder: `{{app_logo}}`
+
+### 2. Email Configuration
+
+**Sender Name:**
+- The name users see as the sender
+- Example: "My Awesome App"
+- Default: Uses your app name
+
+**Reply-To Address:**
+- Where user replies will be sent
+- Example: `support@yourdomain.com`
+- Optional - if not set, replies go nowhere
+
+<Note>
+All emails are sent from `noreply@cavos.xyz` (verified Resend domain). You can customize the **sender name** and **reply-to address**, but not the sender email address.
+</Note>
+
+### 3. Email Template
+
+Customize the full HTML template with these placeholders:
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{{verification_url}}` | The verification link | `https://cavos.xyz/verify?token=...` |
+| `{{app_name}}` | Your app name | "My Awesome App" |
+| `{{user_email}}` | User's email address | "user@example.com" |
+| `{{app_logo}}` | Your app logo URL | "https://..." |
+
+## Customizing from Dashboard
+
+1. Go to **Dashboard → Apps → [Your App] → Email Verification**
+2. Click **"Configure"**
+3. Edit the fields:
+   - **App Name**: Shown in email
+   - **App Logo**: Upload or paste URL
+   - **Sender Name**: Display name for sender
+   - **Reply-To Email**: Where replies go
+   - **HTML Template**: Full customization
+4. Click **"Show Preview"** to see how it looks
+5. Click **"Save Settings"**
+
+## Default Template
+
+If you don't provide a custom template, Cavos uses a beautiful default:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background-color: #f4f4f4;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+      }
+      .header {
+        background-color: #000000;
+        padding: 24px;
+        text-align: center;
+      }
+      .button {
+        background: #000000;
+        color: #ffffff;
+        padding: 14px 32px;
+        text-decoration: none;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <img src="{{app_logo}}" alt="{{app_name}}" />
+      </div>
+      <div class="content">
+        <h1>Verify your email for {{app_name}}</h1>
+        <p>Welcome! Please verify your email address to continue.</p>
+        <a href="{{verification_url}}" class="button">Verify Email Address</a>
+      </div>
+      <div class="footer">
+        <p>This link expires in 24 hours.</p>
+        <p>If you didn't create an account, you can ignore this email.</p>
+      </div>
+    </div>
+  </body>
+</html>
+```
+
+## Custom Template Example
+
+Here's an example with your brand colors:
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 40px;
+      }
+      .email-card {
+        max-width: 500px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 16px;
+        padding: 40px;
+        text-align: center;
+      }
+      .logo {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 24px;
+      }
+      h1 {
+        color: #667eea;
+        font-size: 24px;
+      }
+      .verify-btn {
+        display: inline-block;
+        background: #667eea;
+        color: white;
+        padding: 16px 40px;
+        border-radius: 30px;
+        text-decoration: none;
+        font-weight: bold;
+        margin: 24px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-card">
+      <img src="{{app_logo}}" class="logo" alt="Logo" />
+      <h1>Welcome to {{app_name}}! 🎉</h1>
+      <p>Hey there! We're excited to have you.</p>
+      <p>Click the button below to verify your email and get started:</p>
+      <a href="{{verification_url}}" class="verify-btn">
+        Verify My Email
+      </a>
+      <p style="color: #999; font-size: 12px; margin-top: 32px;">
+        Sent to {{user_email}}<br/>
+        Link expires in 24 hours
+      </p>
+    </div>
+  </body>
+</html>
+```
+
+## Email Header Format
+
+When users receive your email, they'll see:
+
+```
+From: Your App Name <noreply@cavos.xyz>
+Reply-To: support@yourdomain.com
+To: user@example.com
+Subject: Verify your email for Your App Name
+```
+
+When they click "Reply", their email client will address it to `support@yourdomain.com`, not `noreply@cavos.xyz`.
+
+## Why Can't I Use My Own Sender Email?
+
+Using a custom sender address (e.g., `noreply@yourdomain.com`) requires:
+- Domain verification in Resend
+- DNS configuration (SPF, DKIM, DMARC records)
+- Per-app Resend API keys
+- Complex setup that most developers don't need
+
+The reply-to approach provides:
+- ✅ Zero configuration
+- ✅ Immediate functionality
+- ✅ Maximum deliverability (verified Resend domain)
+- ✅ Professional appearance with custom name
+- ✅ User replies still reach you
+
+## Testing Your Email Template
+
+1. Register a test account in your app
+2. Check the verification email you receive
+3. Test all placeholders are replaced correctly
+4. Test the verification link works
+5. Test responsive design on mobile
+
+<Tip>
+Use a test email account (like Gmail) to check if your email lands in spam or inbox.
+</Tip>
+
+## Rate Limits
+
+To prevent abuse:
+- Users can request a verification email every **60 seconds**
+- Resend endpoint: **3 requests per 10 minutes** per email
+
+## Best Practices
+
+### Subject Line
+Keep it short and clear:
+- ✅ "Verify your email for MyApp"
+- ❌ "URGENT ACTION REQUIRED!!!"
+
+### Content
+- Be concise and friendly
+- Make the verification button prominent
+- Include the link as plain text (accessibility)
+- State expiration time (24 hours)
+- Reassure users who didn't sign up
+
+### Design
+- Use responsive design (mobile-friendly)
+- Test in multiple email clients
+- Keep file size small (<100KB)
+- Use web-safe fonts
+- Provide a text-only version
+
+### Branding
+- Match your app's colors
+- Use your logo
+- Keep your brand voice
+- Include support contact info
+
+## API Usage
+
+You can also update email settings programmatically:
+
+```bash
+curl -X PATCH https://cavos.xyz/api/apps/{app_id} \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My App",
+    "logo_url": "https://myapp.com/logo.png",
+    "email_from_name": "My App Team",
+    "email_reply_to": "support@myapp.com",
+    "email_template_html": "<!DOCTYPE html>..."
+  }'
+```
+
+## Troubleshooting
+
+### Emails Not Arriving
+
+1. Check spam folder
+2. Verify your reply-to email is valid
+3. Check dashboard for any errors
+4. Test with different email providers
+
+### Template Not Rendering
+
+1. Validate your HTML
+2. Check all placeholders are spelled correctly
+3. Test inline CSS (external CSS may not work)
+4. Preview in dashboard before saving
+
+### Users Not Clicking Link
+
+1. Make the button more prominent
+2. Explain why verification is needed
+3. State expiration time clearly
+4. Provide a fallback plain text link
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/web/authentication">
+    Learn about email/password authentication
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/advanced/error-handling">
+    Handle email verification errors
+  </Card>
+</CardGroup>

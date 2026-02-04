@@ -52,13 +52,89 @@ export default function RootLayout({ children }) {
 }
 ```
 
-### 2. Login and Create Session
+### 2. Authentication
 
-Users authenticate once and a session is created automatically:
+Cavos supports multiple authentication methods:
 
 ```tsx
 'use client';
 import { useCavos, useSession } from '@cavos/react';
+
+export function AuthButtons() {
+  const { login, register, isAuthenticated, address } = useCavos();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Social Login (Google/Apple)
+  const handleSocialLogin = async (provider) => {
+    await login(provider); // 'google' or 'apple'
+  };
+
+  // Email/Password Registration
+  const handleRegister = async () => {
+    try {
+      await register('firebase', { email, password });
+      alert('Check your email to verify your account!');
+    } catch (error) {
+      if (error.error === 'rate_limited') {
+        alert(`Wait ${error.wait_seconds} seconds before trying again`);
+      }
+    }
+  };
+
+  // Email/Password Login
+  const handleEmailLogin = async () => {
+    try {
+      await login('firebase', { email, password });
+    } catch (error) {
+      if (error.name === 'EmailNotVerifiedError') {
+        alert('Please verify your email before logging in');
+      }
+    }
+  };
+
+  if (isAuthenticated && address) {
+    return <p>Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>;
+  }
+
+  return (
+    <div>
+      {/* Social Login */}
+      <button onClick={() => handleSocialLogin('google')}>
+        Login with Google
+      </button>
+      <button onClick={() => handleSocialLogin('apple')}>
+        Login with Apple
+      </button>
+
+      {/* Email/Password */}
+      <div>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
+        />
+        <button onClick={handleRegister}>Register</button>
+        <button onClick={handleEmailLogin}>Login</button>
+      </div>
+    </div>
+  );
+}
+```
+
+### 3. Create Session
+
+After authentication, create a session for signature-free transactions:
+
+```tsx
+import { useSession } from '@cavos/react';
 
 // Define what the session can do
 const SESSION_POLICY = {
@@ -69,41 +145,33 @@ const SESSION_POLICY = {
   expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
 };
 
-export function LoginButton() {
-  const { login, isAuthenticated, address, isLoading } = useCavos();
+export function SessionManager() {
   const { createSession, hasActiveSession } = useSession();
+  const { isAuthenticated, address } = useCavos();
 
-  const handleLogin = async () => {
-    // 1. Authenticate user
-    await login('google');
-    
-    // 2. Create session (user signs once here)
+  const handleCreateSession = async () => {
     await createSession(SESSION_POLICY);
-    
     // ✓ Private key is now cleared from memory
     // ✓ All future transactions use session key
   };
 
-  if (isLoading) return <button disabled>Loading...</button>;
+  if (!isAuthenticated || !address) {
+    return <p>Please login first</p>;
+  }
 
-  if (isAuthenticated && address) {
-    return (
-      <div>
-        <p>Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>
-        <p>Session: {hasActiveSession ? '✅ Active' : '❌ Inactive'}</p>
-      </div>
-    );
+  if (hasActiveSession) {
+    return <p>✅ Session Active</p>;
   }
 
   return (
-    <button onClick={handleLogin}>
-      Login with Google
+    <button onClick={handleCreateSession}>
+      Create Session
     </button>
   );
 }
 ```
 
-### 3. Execute Transactions (No Signature Required)
+### 4. Execute Transactions (No Signature Required)
 
 After session creation, all transactions are signed automatically:
 

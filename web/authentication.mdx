@@ -1,18 +1,22 @@
 ---
 title: "Authentication"
-description: "OAuth and passkey-only authentication flows"
+description: "Social login, email/password, and passkey authentication flows"
 ---
 
-## Authentication Modes
+## Authentication Methods
 
-Cavos supports two authentication modes:
+Cavos supports multiple authentication methods:
 
-| Mode | Identity | Use Case |
-|------|----------|----------|
-| **OAuth + Passkey** | User has email/name from Google/Apple | Apps that need user identity |
-| **Passkey-Only** | Anonymous, no email collected | Privacy-focused apps |
+| Method | Identity | Use Case |
+|--------|----------|----------|
+| **Google OAuth** | Email, name, profile picture | Quick social login |
+| **Apple OAuth** | Email (optionally hidden), name | Privacy-focused social login |
+| **Email/Password** | Email verified with link | Traditional authentication |
+| **Passkey-Only** | Anonymous, no email | Privacy-first apps |
 
-## OAuth Authentication
+All authentication methods create a **self-custodial StarkNet wallet** tied to your identity.
+
+## Social Login (Google/Apple)
 
 ### Login with Google
 
@@ -20,10 +24,15 @@ Cavos supports two authentication modes:
 import { useCavos } from '@cavos/react';
 
 function LoginButton() {
-  const { login, isAuthenticated, user } = useCavos();
+  const { login, isAuthenticated, user, address } = useCavos();
 
   if (isAuthenticated) {
-    return <p>Welcome, {user?.name}</p>;
+    return (
+      <div>
+        <p>Welcome, {user?.name}</p>
+        <p>Wallet: {address}</p>
+      </div>
+    );
   }
 
   return (
@@ -42,17 +51,170 @@ function LoginButton() {
 </button>
 ```
 
-### OAuth Flow
+### Social Login Flow
 
 1. User clicks login button
-2. Redirect to Google/Apple OAuth
-3. User authenticates
-4. Redirect back with auth data
-5. SDK creates/loads wallet
-6. User prompted for passkey (FaceID/TouchID/Windows Hello)
+2. SDK redirects to Google/Apple OAuth
+3. User authenticates with their account
+4. Provider redirects back with JWT token
+5. SDK derives wallet address from OAuth identity
+6. Wallet is ready to use (deploys on first transaction)
 
 <Note>
-The passkey prompt happens automatically after OAuth. This secures the wallet with biometrics.
+Your wallet address is **deterministically derived** from your OAuth identity (Google/Apple user ID). Same account = same wallet address across devices.
+</Note>
+
+## Email/Password Authentication
+
+For traditional email/password authentication with Firebase:
+
+### Registration
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function RegisterForm() {
+  const { register, isLoading } = useCavos();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleRegister = async () => {
+    try {
+      await register('firebase', { email, password });
+      // User receives verification email
+      alert('Check your email to verify your account!');
+    } catch (err) {
+      if (err.name === 'EmailVerificationRequiredError') {
+        setError('Please check your email to verify your account');
+      } else if (err.error === 'rate_limited') {
+        setError(`Please wait ${err.wait_seconds} seconds before requesting another email`);
+      } else {
+        setError('Registration failed');
+      }
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); handleRegister(); }}>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Password (min 6 characters)"
+      />
+      <button type="submit" disabled={isLoading}>
+        Register
+      </button>
+      {error && <p className="error">{error}</p>}
+    </form>
+  );
+}
+```
+
+### Email Verification
+
+After registration, users receive an email with a verification link:
+
+1. User clicks verification link in email
+2. Link redirects to Cavos backend → marks email as verified
+3. User is redirected back to your app (or success page)
+4. User can now login
+
+**Rate Limiting:**
+- Users can request a new verification email every 60 seconds
+- If user tries to register again before verifying, a new email is sent (with 60s cooldown)
+
+### Login
+
+```tsx
+function LoginForm() {
+  const { login, isAuthenticated, address } = useCavos();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleLogin = async () => {
+    try {
+      await login('firebase', { email, password });
+      // Success! User is authenticated and wallet is ready
+    } catch (err) {
+      if (err.name === 'EmailNotVerifiedError') {
+        setError('Please verify your email before logging in');
+        // Show resend verification email button
+      } else if (err.message?.includes('auth/wrong-password')) {
+        setError('Invalid email or password');
+      } else {
+        setError('Login failed');
+      }
+    }
+  };
+
+  if (isAuthenticated && address) {
+    return <p>Welcome! Wallet: {address}</p>;
+  }
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }}>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Password"
+      />
+      <button type="submit">Login</button>
+      {error && <p className="error">{error}</p>}
+    </form>
+  );
+}
+```
+
+### Check Verification Status
+
+```tsx
+const { cavos } = useCavos();
+
+const isVerified = await cavos.isEmailVerified('user@example.com');
+if (!isVerified) {
+  // Show resend verification email button
+}
+```
+
+### Resend Verification Email
+
+```tsx
+const { cavos } = useCavos();
+
+try {
+  await cavos.resendVerificationEmail('user@example.com');
+  alert('Verification email sent!');
+} catch (err) {
+  if (err.error === 'rate_limited') {
+    alert('Please wait before requesting another email');
+  } else if (err.error === 'already_verified') {
+    alert('Email already verified! You can login now.');
+  }
+}
+```
+
+<Warning>
+**Email verification is required** before login. Users cannot access their wallet until they click the verification link in their email.
+</Warning>
+
+<Note>
+Your wallet address is derived from your Firebase User ID. Same email = same wallet address, even if you reset your password.
 </Note>
 
 ## Passkey-Only Authentication
@@ -79,7 +241,7 @@ function PasskeyButton() {
 
 ### How It Works
 
-When `createWallet()` is called without prior OAuth login:
+When `createWallet()` is called without prior authentication:
 
 1. SDK checks for existing passkey wallet
 2. If found, prompts for biometric authentication
@@ -128,35 +290,47 @@ The SDK automatically restores sessions on page load:
 
 ## Error Handling
 
-### Passkey Cancellation
+### Email Not Verified Error
 
-If a user cancels the passkey prompt:
+When a user tries to login without verifying their email:
 
 ```tsx
 try {
-  await createWallet();
+  await login('firebase', { email, password });
 } catch (error) {
-  if (error.message.includes('cancelled')) {
-    // User cancelled passkey prompt
-    showRetryButton();
+  if (error.name === 'EmailNotVerifiedError') {
+    // Show resend verification button
+    const { cavos } = useCavos();
+    await cavos.resendVerificationEmail(error.email);
   }
 }
 ```
 
-### Retry Wallet Unlock
-
-For users who cancelled passkey but are still authenticated:
+### Invalid Credentials
 
 ```tsx
-const { retryWalletUnlock, isAuthenticated, address } = useCavos();
+try {
+  await login('firebase', { email, password });
+} catch (error) {
+  if (error.message?.includes('auth/wrong-password')) {
+    showError('Invalid email or password');
+  } else if (error.message?.includes('auth/user-not-found')) {
+    showError('No account found with this email');
+  }
+}
+```
 
-// Show retry button if authenticated but no wallet
-if (isAuthenticated && !address) {
-  return (
-    <button onClick={retryWalletUnlock}>
-      Unlock Wallet
-    </button>
-  );
+### Rate Limiting
+
+If a user tries to register multiple times:
+
+```tsx
+try {
+  await register('firebase', { email, password });
+} catch (error) {
+  if (error.error === 'rate_limited') {
+    showError(`Please wait ${error.wait_seconds} seconds before trying again`);
+  }
 }
 ```
 

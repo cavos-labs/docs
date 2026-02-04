@@ -80,14 +80,59 @@ function MyComponent() {
 
 ### Action Methods
 
-#### login(provider, redirectUri?)
+#### login(provider, credentials?, redirectUri?)
 
-Start OAuth authentication:
+Start authentication flow:
 
+**Social Login (Google/Apple):**
 ```tsx
 await login('google');
 await login('apple');
-await login('google', 'https://myapp.com/callback');
+await login('google', undefined, 'https://myapp.com/callback');
+```
+
+**Email/Password (Firebase):**
+```tsx
+await login('firebase', {
+  email: 'user@example.com',
+  password: 'password123'
+});
+```
+
+**Error Handling:**
+```tsx
+try {
+  await login('firebase', { email, password });
+} catch (error) {
+  if (error.name === 'EmailNotVerifiedError') {
+    // Email not verified yet
+    console.log('Unverified email:', error.email);
+  } else if (error.message?.includes('auth/wrong-password')) {
+    // Invalid credentials
+  }
+}
+```
+
+#### register(provider, credentials)
+
+Register a new user with email/password:
+
+```tsx
+try {
+  await register('firebase', {
+    email: 'user@example.com',
+    password: 'secure123'
+  });
+  // Verification email sent
+  alert('Check your email to verify your account!');
+} catch (error) {
+  if (error.name === 'EmailVerificationRequiredError') {
+    // Registration successful, email sent
+  } else if (error.error === 'rate_limited') {
+    // Too many requests
+    console.log('Wait seconds:', error.wait_seconds);
+  }
+}
 ```
 
 #### createWallet()
@@ -139,6 +184,26 @@ Permanently delete account:
 
 ```tsx
 await deleteAccount();
+```
+
+#### Additional Methods
+
+The `cavos` instance provides additional utility methods:
+
+```tsx
+const { cavos } = useCavos();
+
+// Check email verification status
+const isVerified = await cavos.isEmailVerified('user@example.com');
+
+// Resend verification email
+await cavos.resendVerificationEmail('user@example.com');
+
+// Get wallet balance
+const balance = await cavos.getBalance();
+
+// Check if account is deployed
+const deployed = await cavos.isAccountDeployed();
 ```
 
 ## useSession Hook

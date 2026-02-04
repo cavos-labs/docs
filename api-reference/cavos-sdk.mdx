@@ -38,13 +38,95 @@ Initialize SDK and restore existing session.
 
 ## Authentication
 
-### login(provider, redirectUri?)
+### login(provider, credentials?, redirectUri?)
 
 ```typescript
-async login(provider: 'google' | 'apple', redirectUri?: string): Promise<void>
+async login(
+  provider: 'google' | 'apple' | 'firebase',
+  credentials?: { email: string; password: string },
+  redirectUri?: string
+): Promise<void>
 ```
 
-Start OAuth authentication flow.
+Start authentication flow.
+
+**For Google/Apple:**
+```typescript
+await sdk.login('google');
+await sdk.login('apple');
+```
+
+**For Firebase email/password:**
+```typescript
+await sdk.login('firebase', {
+  email: 'user@example.com',
+  password: 'password123'
+});
+```
+
+**Throws:**
+- `EmailNotVerifiedError` - Firebase email not verified yet
+- `Error` - Invalid credentials or authentication failed
+
+### register(provider, credentials)
+
+```typescript
+async register(
+  provider: 'firebase',
+  credentials: { email: string; password: string }
+): Promise<void>
+```
+
+Register a new user with email/password via Firebase.
+
+```typescript
+await sdk.register('firebase', {
+  email: 'user@example.com',
+  password: 'secure123'
+});
+// User receives verification email
+```
+
+**Throws:**
+- `EmailVerificationRequiredError` - Registration successful, verification email sent
+- `Error` with `error: 'rate_limited'` - Too many requests, check `wait_seconds` property
+- `Error` - Email already registered or invalid input
+
+### isEmailVerified(email)
+
+```typescript
+async isEmailVerified(email: string): Promise<boolean>
+```
+
+Check if an email address has been verified.
+
+```typescript
+const verified = await sdk.isEmailVerified('user@example.com');
+if (!verified) {
+  showResendButton();
+}
+```
+
+### resendVerificationEmail(email)
+
+```typescript
+async resendVerificationEmail(email: string): Promise<void>
+```
+
+Resend verification email for unverified Firebase accounts.
+
+```typescript
+await sdk.resendVerificationEmail('user@example.com');
+// User receives new verification email
+```
+
+**Throws:**
+- `Error` with `error: 'rate_limited'` - Too many requests
+- `Error` with `error: 'already_verified'` - Email already verified
+- `Error` - Failed to send email
+
+**Rate Limits:**
+- Registration/resend: 60 seconds between emails per user
 
 ### loginWithGoogle(redirectUri?)
 
@@ -52,11 +134,15 @@ Start OAuth authentication flow.
 async loginWithGoogle(redirectUri?: string): Promise<void>
 ```
 
+Helper method for Google OAuth login.
+
 ### loginWithApple(redirectUri?)
 
 ```typescript
 async loginWithApple(redirectUri?: string): Promise<void>
 ```
+
+Helper method for Apple OAuth login.
 
 ### handleCallback(authDataString)
 
@@ -64,7 +150,7 @@ async loginWithApple(redirectUri?: string): Promise<void>
 async handleCallback(authDataString: string): Promise<void>
 ```
 
-Handle OAuth callback data.
+Handle OAuth callback data (used internally by React provider).
 
 ### logout()
 
