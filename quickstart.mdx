@@ -129,61 +129,18 @@ export function AuthButtons() {
 }
 ```
 
-### 3. Create Session
+### 3. Execute Transactions
 
-After authentication, create a session for signature-free transactions:
-
-```tsx
-import { useSession } from '@cavos/react';
-
-// Define what the session can do
-const SESSION_POLICY = {
-  allowedMethods: [
-    { contractAddress: '0x...your-contract', selector: 'transfer' },
-    { contractAddress: '0x...your-contract', selector: 'approve' },
-  ],
-  expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
-};
-
-export function SessionManager() {
-  const { createSession, hasActiveSession } = useSession();
-  const { isAuthenticated, address } = useCavos();
-
-  const handleCreateSession = async () => {
-    await createSession(SESSION_POLICY);
-    // ✓ Private key is now cleared from memory
-    // ✓ All future transactions use session key
-  };
-
-  if (!isAuthenticated || !address) {
-    return <p>Please login first</p>;
-  }
-
-  if (hasActiveSession) {
-    return <p>✅ Session Active</p>;
-  }
-
-  return (
-    <button onClick={handleCreateSession}>
-      Create Session
-    </button>
-  );
-}
-```
-
-### 4. Execute Transactions (No Signature Required)
-
-After session creation, all transactions are signed automatically:
+After authentication, you're ready to execute transactions. No additional setup required!
 
 ```tsx
-import { useCavos, useSession } from '@cavos/react';
+import { useCavos } from '@cavos/react';
 
 function TransferButton() {
-  const { execute } = useCavos();
-  const { hasActiveSession } = useSession();
+  const { execute, isAuthenticated, address } = useCavos();
 
   const handleTransfer = async () => {
-    // No wallet popup! Session key signs automatically
+    // No wallet popup! Ephemeral key signs automatically
     const txHash = await execute({
       contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
       entrypoint: 'transfer',
@@ -192,13 +149,24 @@ function TransferButton() {
     console.log('Transaction:', txHash);
   };
 
+  if (!isAuthenticated || !address) {
+    return <p>Please login first</p>;
+  }
+
   return (
-    <button onClick={handleTransfer} disabled={!hasActiveSession}>
-      {hasActiveSession ? 'Send (Signature-Free)' : 'Create Session First'}
+    <button onClick={handleTransfer}>
+      Send Transfer (Gasless)
     </button>
   );
 }
 ```
+
+**How it works:**
+1. After login, SDK generates an ephemeral key
+2. First transaction: Deploys account + registers ephemeral key + executes
+3. Subsequent transactions: Signed with ephemeral key (fast & cheap)
+4. All transactions are **gasless** via AVNU Paymaster
+5. Ephemeral keys expire after ~24 hours and auto-renew
 
 ## The Flow
 
@@ -206,45 +174,46 @@ function TransferButton() {
 sequenceDiagram
     participant U as User
     participant SDK as Cavos SDK
-    participant PK as Private Key
-    participant SK as Session Key
+    participant OAuth as OAuth Provider
+    participant EK as Ephemeral Key
     participant Chain as Blockchain
 
     U->>SDK: 1. login('google')
-    SDK->>PK: Decrypt with passkey
-    PK-->>SDK: Available temporarily
-    
-    U->>SDK: 2. createSession(policy)
-    SDK->>PK: Sign session token
-    PK-->>SDK: Authorization signature
-    SDK->>SK: Generate session keypair
-    SDK-xPK: Clear from memory
-    
+    SDK->>OAuth: Redirect to Google
+    OAuth-->>SDK: Return JWT
+    SDK->>EK: Generate ephemeral keypair
+    SDK-->>SDK: Derive wallet address
+
+    U->>SDK: 2. execute(tx) [First time]
+    SDK->>EK: Sign with ephemeral key
+    SDK-->>Chain: Deploy + Register + Execute
+    Note over Chain: Verifies JWT RSA signature<br/>Registers ephemeral key
+
     U->>SDK: 3. execute(tx)
-    SDK->>SK: Sign with session key
-    SK-->>Chain: Gasless transaction ✓
-    
+    SDK->>EK: Sign with ephemeral key
+    EK-->>Chain: Gasless transaction ✓
+
     U->>SDK: 4. execute(tx)
-    SDK->>SK: Sign with session key
-    SK-->>Chain: Gasless transaction ✓
-    
-    Note over PK: PK cleared after step 2
-    Note over SK: Session expires in 1 hour
+    SDK->>EK: Sign with ephemeral key
+    EK-->>Chain: Gasless transaction ✓
+
+    Note over OAuth: JWT verified on-chain
+    Note over EK: Expires in ~24 hours
 ```
 
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Session Keys" icon="key" href="/concepts">
-    Understand how session keys work and their security model.
+  <Card title="Core Concepts" icon="book" href="/concepts">
+    Understand OAuth wallets, JWT verification, and ephemeral keys.
   </Card>
   <Card title="Authentication" icon="lock" href="/web/authentication">
-    Learn about OAuth and passkey-only flows.
+    Learn about Google, Apple, and Firebase email/password flows.
   </Card>
   <Card title="Transactions" icon="paper-plane" href="/web/transactions">
-    Execute gasless transactions with session keys.
+    Execute gasless transactions with ephemeral keys.
   </Card>
   <Card title="React Hooks" icon="react" href="/web/react-hooks">
-    Full useCavos and useSession API reference.
+    Full useCavos API reference.
   </Card>
 </CardGroup>
