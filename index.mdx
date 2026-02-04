@@ -1,18 +1,18 @@
 ---
 title: "Introduction"
-description: "Invisible wallet infrastructure for Starknet applications"
+description: "OAuth wallet infrastructure for Starknet applications"
 ---
 
-Cavos provides invisible wallet infrastructure for Starknet applications. Users authenticate with familiar methods (Google, Apple, or Passkeys) and get a fully functional wallet without managing seed phrases or installing extensions.
+Cavos provides OAuth wallet infrastructure for Starknet applications. Users authenticate with familiar methods (Google, Apple, or Email/Password) and get a fully functional self-custodial wallet without managing seed phrases or installing extensions.
 
 ## Key Features
 
 <CardGroup cols={2}>
-  <Card title="Session Keys" icon="key">
-    Sign once, transact infinitely. Users authenticate once and all subsequent transactions are signed automatically without prompts.
+  <Card title="OAuth Wallets" icon="key">
+    Your OAuth account IS your wallet. Same login = same wallet across all devices. No seed phrases.
   </Card>
-  <Card title="Passkey Security" icon="fingerprint">
-    Private keys are encrypted with device biometrics (FaceID/TouchID) and used only for session creation.
+  <Card title="JWT Verification" icon="shield-check">
+    On-chain RSA signature verification of JWT tokens. Ephemeral keys registered via cryptographic proof.
   </Card>
   <Card title="Gasless Transactions" icon="bolt">
     Users can transact without holding ETH. All gas fees are sponsored via AVNU Paymaster.
@@ -22,17 +22,19 @@ Cavos provides invisible wallet infrastructure for Starknet applications. Users 
   </Card>
 </CardGroup>
 
-## How Session Keys Work
+## How OAuth Wallets Work
 
-Cavos uses **session keys** as the core transaction signing mechanism:
+Cavos creates **self-custodial wallets** tied to your OAuth identity:
 
-1. **User authenticates** with Google, Apple, or a passkey
-2. **Session is created** automatically with a temporary keypair (valid for 1 hour)
-3. **Private key is cleared** from memory immediately after session creation
-4. **All transactions** are signed with the session key - no additional prompts needed
+1. **User authenticates** with Google, Apple, or Firebase email/password
+2. **Provider issues JWT** token with user identity (sub claim)
+3. **Wallet address derived** deterministically from OAuth user ID
+4. **Ephemeral key generated** for transaction signing (~24 hour lifetime)
+5. **First transaction** deploys account + registers ephemeral key via JWT verification
+6. **All transactions** signed automatically with ephemeral key - no prompts needed
 
 > [!NOTE]
-> The user's private key is only used once to authorize the session. After that, it's removed from memory for maximum security.
+> Your wallet address is computed from your OAuth identity. There are no private keys to manage - your Google/Apple/Firebase account IS your wallet.
 
 ## Choose Your Platform
 
@@ -45,10 +47,19 @@ Cavos uses **session keys** as the core transaction signing mechanism:
   </Card>
 </Columns>
 
+## Authentication Methods
+
+Cavos supports multiple ways to authenticate:
+
+- **Google OAuth**: Login with Google account
+- **Apple OAuth**: Login with Apple ID
+- **Email/Password**: Traditional auth with Firebase (email verification required)
+- **Passkey-Only**: Anonymous wallets for privacy-focused apps
+
 ## Quick Example
 
 ```tsx
-import { CavosProvider, useCavos, useSession } from '@cavos/react';
+import { CavosProvider, useCavos } from '@cavos/react';
 
 function App() {
   return (
@@ -59,40 +70,83 @@ function App() {
 }
 
 function WalletDemo() {
-  const { login, address, execute } = useCavos();
-  const { hasActiveSession, createSession } = useSession();
+  const { login, register, address, execute, isAuthenticated } = useCavos();
 
-  // After login, create a session to enable signature-free transactions
-  const handleLogin = async () => {
-    await login('google');
-    await createSession({
-      allowedMethods: [
-        { contractAddress: '0x...', selector: 'transfer' },
-      ],
-      expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
-    });
+  // Social Login
+  const handleSocialLogin = async () => {
+    await login('google');  // or 'apple'
+    // Wallet is ready! Ephemeral key generated automatically
   };
 
-  if (!address) {
-    return <button onClick={handleLogin}>Login with Google</button>;
+  // Email/Password Registration
+  const handleRegister = async () => {
+    await register('firebase', {
+      email: 'user@example.com',
+      password: 'secure123'
+    });
+    // User receives verification email
+  };
+
+  // Email/Password Login
+  const handleEmailLogin = async () => {
+    await login('firebase', {
+      email: 'user@example.com',
+      password: 'secure123'
+    });
+    // Must verify email before login succeeds
+  };
+
+  if (!isAuthenticated || !address) {
+    return (
+      <div>
+        <button onClick={handleSocialLogin}>Login with Google</button>
+        <button onClick={handleRegister}>Register with Email</button>
+      </div>
+    );
   }
 
-  // Transactions are signed automatically with the session key
+  // Transactions are signed automatically with ephemeral key
   const handleTransfer = async () => {
     const txHash = await execute({
-      contractAddress: '0x...',
+      contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
       entrypoint: 'transfer',
-      calldata: ['0x...', '1000000000000000000', '0'],
+      calldata: ['0x...recipient', '1000000000000000000', '0'],
     });
-    console.log('Transaction:', txHash);
+    console.log('Transaction hash:', txHash);
   };
 
   return (
     <div>
       <p>Connected: {address}</p>
-      <p>Session: {hasActiveSession ? 'Active' : 'Inactive'}</p>
-      <button onClick={handleTransfer}>Send (No Signature)</button>
+      <button onClick={handleTransfer}>Send Transfer (Gasless)</button>
     </div>
   );
 }
 ```
+
+## How It Works Under the Hood
+
+**First Transaction:**
+1. SDK signs transaction with ephemeral key
+2. Includes full JWT + RSA signature in calldata
+3. Account contract deploys itself via paymaster
+4. Contract verifies JWT RSA signature on-chain
+5. Ephemeral key is registered
+6. Transaction executes
+
+**Subsequent Transactions:**
+1. SDK signs with ephemeral key (lightweight signature)
+2. No JWT needed - key already registered
+3. Much cheaper gas cost
+4. Ephemeral keys auto-renew when they expire
+
+## Key Benefits
+
+| Feature | Benefit |
+|---------|---------|
+| **No Seed Phrases** | Your OAuth account IS your wallet |
+| **Cross-Device** | Same login = same wallet everywhere |
+| **Self-Custodial** | You control your wallet, not Cavos |
+| **Gasless** | Never need to buy crypto to transact |
+| **On-Chain Security** | JWT verified on-chain, not by backend |
+| **Auto-Renewal** | Ephemeral keys renew automatically |
