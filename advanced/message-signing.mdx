@@ -1,134 +1,78 @@
 ---
 title: "Message Signing"
-description: "Sign messages with your wallet"
+description: "Sign typed data and messages with your wallet"
 ---
 
 ## Overview
 
-Sign messages for authentication, proof of ownership, or off-chain signatures.
+Cavos supports signing typed data (SNIP-12) using your session key. This is useful for authentication, proof of ownership, or off-chain signatures (like order signing).
 
-<Warning>
-Message signing for arbitrary strings is **not yet fully implemented** in the OAuth wallet flow. TypedData signing for transactions works transparently—this limitation only affects standalone message signing for authentication purposes.
-</Warning>
+## Signing Typed Data
 
-## Current Status
-
-| Feature | Status |
-|---------|--------|
-| Transaction signing | ✅ Fully supported |
-| Session key signing | ✅ Automatic |
-| TypedData (in transactions) | ✅ Supported |
-| Standalone `signMessage()` | ⏳ Coming soon |
-
-## How Transaction Signing Works
-
-When you execute transactions, the SDK automatically signs them using your session key:
+To sign a message, prepare it in the [SNIP-12](https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-12.md) format and call `signMessage()`.
 
 ```tsx
 import { useCavos } from '@cavos/react';
 
-function TransferButton() {
-  const { execute, address } = useCavos();
+function SignDemo() {
+  const { signMessage } = useCavos();
 
-  const handleTransfer = async () => {
-    // Transactions are automatically signed with your session key
-    const txHash = await execute({
-      contractAddress: '0x...',
-      entrypoint: 'transfer',
-      calldata: [recipient, amount],
-    });
+  const handleSign = async () => {
+    const typedData = {
+      types: {
+        StarkNetDomain: [
+          { name: 'name', type: 'shortstring' },
+          { name: 'version', type: 'shortstring' },
+        ],
+        Message: [
+          { name: 'content', type: 'felt' },
+        ],
+      },
+      primaryType: 'Message',
+      domain: {
+        name: 'MyAwesomeDApp',
+        version: '1',
+      },
+      message: {
+        content: '0x48656c6c6f20576f726c64', // "Hello World" in hex
+      },
+    };
+
+    try {
+      const signature = await signMessage(typedData);
+      console.log('Signature:', signature.r, signature.s);
+    } catch (error) {
+      console.error('Signing failed:', error);
+    }
   };
 
-  return <button onClick={handleTransfer}>Transfer</button>;
+  return <button onClick={handleSign}>Sign Message</button>;
 }
 ```
 
-## Workaround: Typed Data in Transactions
+## Verifying Signatures
 
-For off-chain signatures (like order signing for DEXs), you can use a contract that accepts typed data:
+Since Cavos uses a session key for signing, verification must happen against the registered session key on-chain.
 
-```tsx
-// Sign an order by executing a contract call
-const txHash = await execute({
-  contractAddress: '0x_YOUR_ORDER_CONTRACT',
-  entrypoint: 'submit_signed_order',
-  calldata: [
-    orderId,
-    tokenIn,
-    amountIn,
-    tokenOut,
-    minAmountOut,
-    expiry,
-  ],
-});
-```
-
-The contract can then verify the caller is the expected wallet.
-
-## Future: Standalone Message Signing
-
-When `signMessage()` is fully implemented, it will support:
-
-### Simple String
-
-```tsx
-// Coming soon
-const signature = await signMessage('Hello World');
-```
-
-### TypedData (EIP-712 style)
-
-```tsx
-// Coming soon
-const typedData = {
-  types: {
-    StarkNetDomain: [
-      { name: 'name', type: 'shortstring' },
-      { name: 'version', type: 'shortstring' },
-    ],
-    Message: [
-      { name: 'content', type: 'felt' },
-    ],
-  },
-  primaryType: 'Message',
-  domain: {
-    name: 'MyApp',
-    version: '1',
-  },
-  message: {
-    content: '0x1234...',
-  },
-};
-
-const signature = await signMessage(typedData);
-```
+1.  **On-Chain**: Use the account contract's `is_valid_signature` method (SRC-6).
+2.  **Off-Chain**: Fetch the current session key for the user from the contract via `get_session(session_key)` and then verify the ECDSA signature against it.
 
 ## Signature Format
 
-When implemented, signatures will use the STARK curve ECDSA format:
+The `signMessage` method returns a standard STARK curve signature:
 
 ```typescript
 interface Signature {
-  r: string;
-  s: string;
+  r: string; // Hex string
+  s: string; // Hex string
 }
 ```
 
-## Use Cases (Future)
+## Use Cases
 
 ### Authentication
-```tsx
-const message = `Sign in to MyApp: ${nonce}`;
-const signature = await signMessage(message);
-// Send to server for verification
-```
+Instead of a password, users can sign a unique challenge (nonce) to prove they control the wallet associated with their OAuth identity.
 
-### Proof of Ownership
-```tsx
-const message = `I own wallet ${address} on ${new Date().toISOString()}`;
-const signature = await signMessage(message);
-```
+### Order Signing
+DEXs and NFT marketplaces use off-chain signatures to allow users to list assets or place orders without paying gas, only executing on-chain when a match is found.
 
-<Note>
-For authentication use cases **today**, consider using the user's OAuth identity (email/sub) directly since Cavos guarantees the wallet derives from a verified OAuth identity.
-</Note>

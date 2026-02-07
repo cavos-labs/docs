@@ -30,8 +30,8 @@ Cavos creates **self-custodial wallets** tied to your OAuth identity:
 2. **Provider issues JWT** token with user identity (sub claim)
 3. **Wallet address derived** deterministically from OAuth user ID
 4. **Ephemeral key generated** for transaction signing (~24 hour lifetime)
-5. **First transaction** deploys account + registers ephemeral key via JWT verification
-6. **All transactions** signed automatically with ephemeral key - no prompts needed
+5. **First transaction** deploys account + registers session key via JWT verification
+6. **All transactions** signed automatically with session key - no prompts needed
 
 > [!NOTE]
 > Your wallet address is computed from your OAuth identity. There are no private keys to manage - your Google/Apple/Firebase account IS your wallet.
@@ -63,7 +63,18 @@ import { CavosProvider, useCavos } from '@cavos/react';
 
 function App() {
   return (
-    <CavosProvider config={{ appId: 'your-app-id' }}>
+    <CavosProvider 
+      config={{ 
+        appId: 'your-app-id',
+        session: {
+          defaultPolicy: {
+            allowedContracts: ['0x049d...'],
+            spendingLimits: [{ token: '0x049d...', limit: 10n * 10n**18n }],
+            maxCallsPerTx: 10
+          }
+        }
+      }}
+    >
       <WalletDemo />
     </CavosProvider>
   );
@@ -105,7 +116,7 @@ function WalletDemo() {
     );
   }
 
-  // Transactions are signed automatically with ephemeral key
+  // Transactions are signed automatically with session key
   const handleTransfer = async () => {
     const txHash = await execute({
       contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
@@ -127,7 +138,7 @@ function WalletDemo() {
 ## How It Works Under the Hood
 
 **First Transaction:**
-1. SDK signs transaction with ephemeral key
+1. SDK signs transaction with session key
 2. Includes full JWT + RSA signature in calldata
 3. Account contract deploys itself via paymaster
 4. Contract verifies JWT RSA signature on-chain
@@ -135,7 +146,7 @@ function WalletDemo() {
 6. Transaction executes
 
 **Subsequent Transactions:**
-1. SDK signs with ephemeral key (lightweight signature)
+1. SDK signs with session key (lightweight signature)
 2. No JWT needed - key already registered
 3. Much cheaper gas cost
 4. Ephemeral keys auto-renew when they expire

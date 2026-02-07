@@ -26,14 +26,14 @@ wallet_address = Contract(Poseidon(user_sub, app_salt), class_hash, registry)
 The wallet address is **deterministic**—same user + same app always produces the same wallet. No private key storage required.
 </Info>
 
-### Session Keys (Ephemeral Keys)
+### Session Keys (Session Keys)
 
 Instead of storing master private keys, Cavos uses short-lived **session keys**:
 
-1. **Session Creation**: SDK generates a fresh ephemeral key pair on each login
+1. **Session Creation**: SDK generates a fresh session key pair on each login
 2. **JWT Binding**: The ephemeral public key is embedded in the JWT nonce
 3. **On-chain Registration**: The smart contract verifies the JWT and registers the session key
-4. **Transaction Signing**: All transactions are signed with the ephemeral key
+4. **Transaction Signing**: All transactions are signed with the session key
 
 ```
 ┌─────────────┐     ┌───────────────┐     ┌──────────────┐
@@ -108,12 +108,12 @@ fn validate_transaction(jwt, session_sig) {
 If Google/Apple's signing keys are compromised:
 - **Risk**: Attacker could forge JWTs
 - **Mitigation**: JWKS registry on-chain; Cavos monitors and updates
-- **Mitigation**: Session bound to specific ephemeral key generated client-side
+- **Mitigation**: Session bound to specific session key generated client-side
 
 ### Browser XSS
 
 If attacker injects JavaScript:
-- **Risk**: Could access ephemeral key in session storage
+- **Risk**: Could access session key in session storage
 - **Mitigation**: Session keys are short-lived (~24h)
 - **Mitigation**: Session bound to specific JWT claims
 - **Mitigation**: Implement Content Security Policy

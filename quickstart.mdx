@@ -44,6 +44,17 @@ export default function RootLayout({ children }) {
       config={{
         appId: 'your-app-id',
         network: 'sepolia', // or 'mainnet'
+        session: {
+          defaultPolicy: {
+            allowedContracts: [
+              '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7' // STRK
+            ],
+            spendingLimits: [
+              { token: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7', limit: 10n * 10n**18n } // 10 STRK
+            ],
+            maxCallsPerTx: 10
+          }
+        }
       }}
     >
       {children}
@@ -140,7 +151,7 @@ function TransferButton() {
   const { execute, isAuthenticated, address } = useCavos();
 
   const handleTransfer = async () => {
-    // No wallet popup! Ephemeral key signs automatically
+    // No wallet popup! Session key signs automatically
     const txHash = await execute({
       contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
       entrypoint: 'transfer',
@@ -162,11 +173,11 @@ function TransferButton() {
 ```
 
 **How it works:**
-1. After login, SDK generates an ephemeral key
-2. First transaction: Deploys account + registers ephemeral key + executes
-3. Subsequent transactions: Signed with ephemeral key (fast & cheap)
+1. After login, SDK generates an session key
+2. First transaction: Deploys account + registers session key + executes
+3. Subsequent transactions: Signed with session key (fast & cheap)
 4. All transactions are **gasless** via AVNU Paymaster
-5. Ephemeral keys expire after ~24 hours and auto-renew
+5. Session keys expire after ~24 hours and auto-renew
 
 ## The Flow
 
@@ -175,26 +186,26 @@ sequenceDiagram
     participant U as User
     participant SDK as Cavos SDK
     participant OAuth as OAuth Provider
-    participant EK as Ephemeral Key
+    participant EK as Session Key
     participant Chain as Blockchain
 
     U->>SDK: 1. login('google')
     SDK->>OAuth: Redirect to Google
     OAuth-->>SDK: Return JWT
-    SDK->>EK: Generate ephemeral keypair
+    SDK->>EK: Generate session keypair
     SDK-->>SDK: Derive wallet address
 
     U->>SDK: 2. execute(tx) [First time]
-    SDK->>EK: Sign with ephemeral key
+    SDK->>EK: Sign with session key
     SDK-->>Chain: Deploy + Register + Execute
-    Note over Chain: Verifies JWT RSA signature<br/>Registers ephemeral key
+    Note over Chain: Verifies JWT RSA signature<br/>Registers session key
 
     U->>SDK: 3. execute(tx)
-    SDK->>EK: Sign with ephemeral key
+    SDK->>EK: Sign with session key
     EK-->>Chain: Gasless transaction ✓
 
     U->>SDK: 4. execute(tx)
-    SDK->>EK: Sign with ephemeral key
+    SDK->>EK: Sign with session key
     EK-->>Chain: Gasless transaction ✓
 
     Note over OAuth: JWT verified on-chain
@@ -205,13 +216,13 @@ sequenceDiagram
 
 <CardGroup cols={2}>
   <Card title="Core Concepts" icon="book" href="/concepts">
-    Understand OAuth wallets, JWT verification, and ephemeral keys.
+    Understand OAuth wallets, JWT verification, and session keys.
   </Card>
   <Card title="Authentication" icon="lock" href="/web/authentication">
     Learn about Google, Apple, and Firebase email/password flows.
   </Card>
   <Card title="Transactions" icon="paper-plane" href="/web/transactions">
-    Execute gasless transactions with ephemeral keys.
+    Execute gasless transactions with session keys.
   </Card>
   <Card title="React Hooks" icon="react" href="/web/react-hooks">
     Full useCavos API reference.

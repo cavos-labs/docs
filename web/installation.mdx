@@ -38,9 +38,15 @@ Wrap your application with `CavosProvider` at the root level:
 ```tsx
 import { CavosProvider } from '@cavos/react';
 
-const config = {
   appId: 'your-app-id',
   network: 'sepolia', // 'sepolia' | 'mainnet'
+  session: {
+    defaultPolicy: {
+      allowedContracts: ['0x049d...'],
+      spendingLimits: [{ token: '0x049d...', limit: 10n * 10n**18n }],
+      maxCallsPerTx: 10
+    }
+  }
 };
 
 export default function App({ children }) {
@@ -61,6 +67,7 @@ export default function App({ children }) {
 | `paymasterApiKey` | string | No | Cavos shared key | Custom AVNU Paymaster API key |
 | `starknetRpcUrl` | string | No | Alchemy RPC | Custom Starknet RPC URL |
 | `enableLogging` | boolean | No | false | Enable SDK debug logging |
+| `session` | `SessionConfig` | No | - | Session duration and default policy |
 
 ### Next.js App Router
 
@@ -74,7 +81,18 @@ import { CavosProvider } from '@cavos/react';
 
 export function Providers({ children }) {
   return (
-    <CavosProvider config={{ appId: 'your-app-id' }}>
+    <CavosProvider 
+      config={{ 
+        appId: 'your-app-id',
+        session: {
+          defaultPolicy: {
+            allowedContracts: ['0x049d...'],
+            spendingLimits: [{ token: '0x049d...', limit: 10n * 10n**18n }],
+            maxCallsPerTx: 10
+          }
+        }
+      }}
+    >
       {children}
     </CavosProvider>
   );

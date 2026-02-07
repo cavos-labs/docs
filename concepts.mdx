@@ -12,11 +12,11 @@ Cavos creates **self-custodial StarkNet wallets** tied to your OAuth identity (G
 ```mermaid
 flowchart TD
     A[User Authenticates] --> B[Provider Issues JWT]
-    B --> C[SDK Generates Ephemeral Key]
+    B --> C[SDK Generates Session Key]
     C --> D[Compute Nonce = Poseidon hash]
     D --> E[Derive Wallet Address]
     E --> F[Deploy Account with JWT Signature]
-    F --> G[Execute Transactions with Ephemeral Key]
+    F --> G[Execute Transactions with Session Key]
 
     style A fill:#f9f9f9,stroke:#333
     style B fill:#e6f3ff,stroke:#333
@@ -30,10 +30,10 @@ flowchart TD
 
 1. **User Authenticates**: Login with Google, Apple, or Firebase email/password
 2. **JWT Issued**: Provider returns a signed JWT token with user identity
-3. **Ephemeral Key Generated**: SDK creates a temporary ECDSA keypair (Stark curve)
-4. **Nonce Computation**: `nonce = Poseidon(ephemeralPubKey, maxBlock, randomness)`
+3. **Session Key Generated**: SDK creates a temporary ECDSA keypair (Stark curve)
+4. **Nonce Computation**: `nonce = Poseidon(sessionPubKey, maxBlock, randomness)`
 5. **Address Derivation**: `addressSeed = Poseidon(sub, app_salt)` → deterministic wallet address
-6. **On-Chain Verification**: Smart contract verifies JWT RSA signature and registers ephemeral key
+6. **On-Chain Verification**: Smart contract verifies JWT RSA signature and registers session key
 
 ### JWT Verification On-Chain
 
@@ -43,7 +43,7 @@ Unlike traditional session keys, Cavos uses **JWT signature verification** direc
 // JWT contains:
 {
   sub: "google-oauth2|123456",  // User ID from provider
-  nonce: "0x...",                // Poseidon hash of ephemeral key
+  nonce: "0x...",                // Poseidon hash of session key
   iss: "https://accounts.google.com",
   aud: "your-client-id",
   exp: 1234567890
@@ -52,24 +52,24 @@ Unlike traditional session keys, Cavos uses **JWT signature verification** direc
 
 **On first transaction:**
 - Contract verifies RSA-2048 signature of JWT
-- Validates nonce matches ephemeral public key
-- Registers ephemeral key for this session
+- Validates nonce matches session public key
+- Registers session key for this session
 - Executes transaction
 
 **Subsequent transactions:**
-- Signed with lightweight ephemeral key signature
+- Signed with lightweight session key signature
 - No need to re-verify full JWT
 - Much cheaper gas cost
 
-### Ephemeral Keys
+### Session Keys
 
-Ephemeral keys are temporary signing keys that expire after a configured duration:
+Session keys are temporary signing keys that expire after a configured duration:
 
 | Property | Description |
 |----------|-------------|
 | **Lifetime** | ~24 hours (configurable via `sessionDuration`) |
 | **Storage** | SessionStorage (cleared on browser close) |
-| **Renewal** | Can generate new ephemeral key and re-register |
+| **Renewal** | Can generate new session key and re-register |
 | **Revocation** | Automatic on expiry or manual logout |
 
 **Key Differences from Session Keys:**
@@ -83,11 +83,11 @@ Ephemeral keys are temporary signing keys that expire after a configured duratio
 | Aspect | Behavior |
 |--------|----------|
 | **JWT Token** | Issued by OAuth provider, verified on-chain |
-| **Ephemeral Key** | Generated client-side, registered via JWT |
+| **Session Key** | Generated client-side, registered via JWT |
 | **Wallet Address** | Deterministically derived from OAuth `sub` claim |
 | **Private Key** | Never stored - wallets are OAuth-based, not key-based |
-| **Expiration** | Ephemeral keys expire after ~24 hours |
-| **Renewal** | Generate new ephemeral key, verify with same JWT |
+| **Expiration** | Session keys expire after ~24 hours |
+| **Renewal** | Generate new session key, verify with same JWT |
 
 > [!IMPORTANT]
 > Cavos wallets are **OAuth-based**, not private-key-based. Your identity (Google/Apple/Firebase account) IS your wallet. No seed phrases, no private keys to manage.
@@ -141,7 +141,7 @@ All transactions through Cavos are **gasless by default**. Users never need to h
 ### How It Works
 
 1. User initiates a transaction via `execute()`
-2. SDK signs with ephemeral key and sends to AVNU Paymaster
+2. SDK signs with session key and sends to AVNU Paymaster
 3. Paymaster sponsors the gas fee
 4. Transaction is executed on-chain
 
@@ -165,7 +165,7 @@ Account Class Hash: [OAuth Account with JWT verification]
 ### Account Features
 
 - **JWT Verification**: On-chain RSA signature verification
-- **Ephemeral Keys**: Lightweight signing after JWT registration
+- **Session Keys**: Lightweight signing after JWT registration
 - **Self-Deploy**: Accounts deploy themselves via paymaster
 - **Multi-call**: Execute multiple transactions atomically
 - **Upgradeable**: Account logic can be upgraded
@@ -178,9 +178,9 @@ Accounts are deployed lazily on first transaction. Cavos handles this automatica
 2. Account can receive funds before deployment (precomputed address)
 3. On first transaction:
    - Account deploys itself using JWT signature
-   - Ephemeral key is registered on-chain
+   - Session key is registered on-chain
    - Transaction executes in same call
-4. Subsequent transactions use lightweight ephemeral key signature
+4. Subsequent transactions use lightweight session key signature
 
 **Key Insight**: No relayer needed! The account deploys itself via paymaster using the JWT signature.
 
@@ -191,7 +191,7 @@ Accounts are deployed lazily on first transaction. Cavos handles this automatica
 ```
 User calls execute()
   ↓
-SDK signs with ephemeral key
+SDK signs with session key
   ↓
 Includes full JWT + RSA signature
   ↓
@@ -200,8 +200,8 @@ AVNU Paymaster builds transaction
 On-chain:
   1. Deploy account contract
   2. Verify JWT RSA signature
-  3. Validate nonce matches ephemeral key
-  4. Register ephemeral key
+  3. Validate nonce matches session key
+  4. Register session key
   5. Execute transaction
 ```
 
@@ -210,35 +210,35 @@ On-chain:
 ```
 User calls execute()
   ↓
-SDK signs with ephemeral key
+SDK signs with session key
   ↓
 Lightweight signature (no JWT)
   ↓
 AVNU Paymaster sponsors gas
   ↓
 On-chain:
-  1. Verify ephemeral key signature
+  1. Verify session key signature
   2. Check key not expired
   3. Execute transaction
 ```
 
-### Ephemeral Key Renewal
+### Session Key Renewal
 
-When ephemeral key expires:
+When session key expires:
 
 ```
 SDK detects expiration
   ↓
-Generates new ephemeral keypair
+Generates new session keypair
   ↓
 Computes new nonce
   ↓
-Signs with old ephemeral key + includes new JWT
+Signs with old session key + includes new JWT
   ↓
 On-chain:
-  1. Verify old ephemeral key (still valid in grace period)
-  2. Verify JWT signature for new ephemeral key
-  3. Register new ephemeral key
+  1. Verify old session key (still valid in grace period)
+  2. Verify JWT signature for new session key
+  3. Register new session key
   4. Old key marked as replaced
 ```
 
@@ -247,7 +247,7 @@ On-chain:
 ### OAuth (Google/Apple)
 
 ```
-User → OAuth Login → JWT from Provider → Ephemeral Key Generated →
+User → OAuth Login → JWT from Provider → Session Key Generated →
 Wallet Address Derived → Ready to Transact
 ```
 
@@ -255,7 +255,7 @@ Wallet Address Derived → Ready to Transact
 
 ```
 User → Register + Verify Email → Login → Custom JWT from Cavos →
-Ephemeral Key Generated → Wallet Address Derived → Ready to Transact
+Session Key Generated → Wallet Address Derived → Ready to Transact
 ```
 
 ### Passkey-Only (Anonymous)
@@ -281,4 +281,4 @@ WebAuthn Signature → Ready to Transact
 | **Gasless** | Never need to buy crypto to transact |
 | **Self-Deploy** | No relayer, account deploys itself |
 | **On-Chain Verification** | JWT signature verified on-chain |
-| **Secure** | Ephemeral keys expire, JWT can't be reused |
+| **Secure** | Session keys expire, JWT can't be reused |
