@@ -51,6 +51,15 @@
             ]
           },
           {
+            "group": "CLI",
+            "pages": [
+              "cli/installation",
+              "cli/commands",
+              "cli/session-management",
+              "cli/ai-agents"
+            ]
+          },
+          {
             "group": "Advanced",
             "pages": [
               "advanced/session-keys",
