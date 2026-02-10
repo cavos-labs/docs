@@ -1,0 +1,342 @@
+---
+title: "Commands"
+description: "Complete reference for all Cavos CLI commands"
+---
+
+## Wallet Information
+
+### whoami
+
+Display current wallet information and session status.
+
+```bash
+cavos whoami
+```
+
+**Output:**
+```
+Address: 0x1234...5678
+Network: mainnet
+Deployed: Yes
+Session Active: Yes
+```
+
+**JSON Output:**
+```bash
+cavos whoami --json
+```
+
+---
+
+### balance
+
+Check token balances for your wallet.
+
+```bash
+# Show all balances (ETH and STRK)
+cavos balance
+
+# Show specific token balance
+cavos balance --token STRK
+cavos balance --token ETH
+cavos balance --token 0x04718f...  # Custom token
+
+# JSON output
+cavos balance --json
+```
+
+---
+
+## Transactions
+
+All transaction commands support:
+- `--wait`: Wait for on-chain confirmation before returning
+- `--json`: Output structured JSON instead of human-readable text
+
+### transfer
+
+Transfer ERC-20 tokens to another address.
+
+```bash
+cavos transfer --to 0xRECIPIENT --amount 1.5 --token STRK
+
+# Wait for confirmation
+cavos transfer --to 0xRECIPIENT --amount 1.5 --token STRK --wait
+
+# JSON output
+cavos transfer --to 0xRECIPIENT --amount 1.5 --token STRK --json
+```
+
+**Parameters:**
+- `--to`: Recipient Starknet address (required)
+- `--amount`: Amount in human-readable units like `1.5` (required)
+- `--token`: Token symbol (`STRK`, `ETH`) or contract address (default: `STRK`)
+- `--wait`: Wait for transaction confirmation
+- `--json`: JSON output format
+
+**Example Output:**
+```
+Transfer submitted!
+Transaction Hash: 0xabc123...
+Explorer: https://voyager.online/tx/0xabc123...
+```
+
+---
+
+### approve
+
+Approve a spender contract to transfer tokens on your behalf.
+
+```bash
+cavos approve --spender 0xSPENDER --amount 100 --token STRK
+
+# With confirmation
+cavos approve --spender 0xSPENDER --amount 100 --token STRK --wait
+```
+
+**Parameters:**
+- `--spender`: Contract address to approve (required)
+- `--amount`: Maximum amount to approve (required)
+- `--token`: Token to approve (default: `STRK`)
+- `--wait`: Wait for confirmation
+- `--json`: JSON output
+
+> [!NOTE]
+> Many DeFi protocols require approval before you can deposit or swap tokens.
+
+---
+
+### execute
+
+Execute an arbitrary contract call.
+
+```bash
+cavos execute --contract 0xCONTRACT --entrypoint mint --calldata "0xTO,100,0"
+
+# With confirmation
+cavos execute --contract 0xCONTRACT --entrypoint mint --calldata "0xTO,100,0" --wait
+```
+
+**Parameters:**
+- `--contract`: Target contract address (required)
+- `--entrypoint`: Function name to call (required)
+- `--calldata`: Comma-separated calldata values (optional)
+- `--wait`: Wait for confirmation
+- `--json`: JSON output
+
+**Calldata Format:**
+- Values are comma-separated
+- Can be hex (`0x123`) or decimal (`1000`)
+- Omit `--calldata` if the function takes no arguments
+
+---
+
+### multicall
+
+Execute multiple contract calls atomically in a single transaction.
+
+```bash
+# Approve + Swap in one transaction
+cavos multicall --calls '[
+  {
+    "contract": "0xTOKEN",
+    "entrypoint": "approve",
+    "calldata": "0xSWAP_CONTRACT,1000000000000000000,0"
+  },
+  {
+    "contract": "0xSWAP_CONTRACT",
+    "entrypoint": "swap",
+    "calldata": "0xTOKEN_IN,0xTOKEN_OUT,100"
+  }
+]'
+
+# With confirmation
+cavos multicall --calls '...' --wait
+```
+
+**Parameters:**
+- `--calls`: JSON array of call objects (required)
+- `--wait`: Wait for confirmation
+- `--json`: JSON output
+
+**Call Object Schema:**
+```typescript
+{
+  contract: string;     // Contract address
+  entrypoint: string;   // Function name
+  calldata?: string;    // Comma-separated calldata (optional)
+}
+```
+
+> [!IMPORTANT]
+> All calls in a multicall succeed or fail together (atomic execution).
+
+---
+
+## Read-Only Operations
+
+### call
+
+Execute a read-only contract call (view function) without spending gas.
+
+```bash
+cavos call --contract 0xCONTRACT --entrypoint balanceOf --calldata "0xUSER"
+```
+
+**Parameters:**
+- `--contract`: Target contract address (required)
+- `--entrypoint`: View function name (required)
+- `--calldata`: Comma-separated or JSON arguments
+- `--block`: Block identifier (default: `latest`)
+- `--json`: JSON output
+
+---
+
+### simulate
+
+Dry-run a transaction to verify success and check gas usage before execution.
+
+```bash
+cavos simulate --contract 0xSWAP --entrypoint swap --calldata "100,0" --json
+```
+
+**Output (JSON):**
+Returns execution trace, fee estimation, and revert reason if failed.
+
+---
+
+### estimate
+
+Estimate the fee for a transaction.
+
+```bash
+cavos estimate --contract 0xCONTRACT --entrypoint transfer --calldata "0xTO,100"
+```
+
+**Output:**
+- Estimated Fee (ETH)
+- Gas Usage
+
+---
+
+## Session Management
+
+### session status
+
+Check if your session is active on-chain.
+
+```bash
+cavos session status
+
+# JSON output
+cavos session status --json
+```
+
+**Output:**
+```
+Session Key: 0x789...
+Registered: Yes
+Valid Until: 2024-03-15 10:30:00
+Renewable: No
+```
+
+---
+
+### session import
+
+Import a session token from the dashboard.
+
+cavos session import <base64_token>
+```
+
+After importing, the session is saved locally and you don't need to provide `CAVOS_TOKEN` anymore.
+
+> [!WARNING]
+> Importing overwrites any existing saved session.
+
+---
+
+## Policy
+
+### policy show
+
+Display the spending policy for your current session.
+
+```bash
+cavos policy show
+
+# JSON output
+cavos policy show --json
+```
+
+**Output:**
+```
+Spending Limits:
+  STRK: 10.0 / 100.0 used
+  ETH: 0.1 / 0.5 used
+
+Allowed Contracts:
+  - 0x049d36... (STRK Token)
+  - 0x053c91... (ETH Token)
+  - 0x07e2a13... (DeFi Protocol)
+```
+
+> [!NOTE]
+> Policies are set in the dashboard when you create or export a session.
+
+---
+
+## Global Flags
+
+These flags work with most commands:
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output JSON instead of human-readable text |
+| `--wait` | Wait for transaction confirmation (transactions only) |
+| `--network` | Override network (not recommended, use session's network) |
+
+---
+
+## Exit Codes
+
+The CLI uses standard exit codes:
+
+- `0`: Success
+- `1`: Error (check stderr for details)
+
+**Example Error Handling:**
+
+```bash
+#!/bin/bash
+if cavos transfer --to 0x... --amount 1.5 --token STRK; then
+  echo "Transfer succeeded!"
+else
+  echo "Transfer failed with code $?"
+fi
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `CAVOS_TOKEN` | Base64 session token from dashboard | Yes (unless session imported) |
+| `CAVOS_RPC_URL` | Custom Starknet RPC URL | No |
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Session Management" icon="key" href="/cli/session-management">
+    Learn about session policies and renewal
+  </Card>
+  <Card title="Examples" icon="code" href="/cli/examples">
+    Common workflows and patterns
+  </Card>
+  <Card title="AI Agents" icon="robot" href="/cli/ai-agents">
+    Use the CLI with AI agents
+  </Card>
+</CardGroup>

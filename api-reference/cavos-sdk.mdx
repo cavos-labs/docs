@@ -224,6 +224,32 @@ getFundingAddress(): string | null
 async isAccountDeployed(): Promise<boolean>
 ```
 
+### getWalletStatus()
+
+```typescript
+getWalletStatus(): WalletStatus
+```
+
+Get detailed wallet deployment and session state.
+
+```typescript
+const status = sdk.getWalletStatus();
+
+console.log('Deployed:', status.isDeployed);
+console.log('Session active:', status.isSessionActive);
+console.log('Ready:', status.isReady);
+```
+
+**WalletStatus interface:**
+
+```typescript
+interface WalletStatus {
+  isDeployed: boolean;      // Account contract deployed on-chain
+  isSessionActive: boolean; // Session key registered and not expired
+  isReady: boolean;         // Both deployed and session active
+}
+```
+
 ### deployAccount()
 
 ```typescript
@@ -299,7 +325,76 @@ hasActiveSession(): boolean
 async createSession(): Promise<void>
 ```
 
-Note: Session keys not supported with ArgentX accounts.
+
+### registerCurrentSession()
+
+```typescript
+async registerCurrentSession(): Promise<string>
+```
+
+Register the current session key on-chain. Returns transaction hash.
+
+```typescript
+const txHash = await sdk.registerCurrentSession();
+console.log('Session registered:', txHash);
+```
+
+> [!IMPORTANT]
+> After this method completes, `walletStatus.isSessionActive` will be updated to `true`.
+
+### revokeSession(sessionKey?)
+
+```typescript
+async revokeSession(sessionKey?: string): Promise<string>
+```
+
+Revoke a session key on-chain. If no `sessionKey` is provided, revokes the current session. Returns transaction hash.
+
+```typescript
+// Revoke current session
+await sdk.revokeSession();
+
+// Revoke specific session
+await sdk.revokeSession('0x123abc...');
+```
+
+> [!NOTE]
+> This operation uses JWT signature verification on-chain.
+
+### emergencyRevokeAllSessions()
+
+```typescript
+async emergencyRevokeAllSessions(): Promise<string>
+```
+
+Revoke all active sessions for the wallet by incrementing the global revocation epoch. Returns transaction hash.
+
+```typescript
+await sdk.emergencyRevokeAllSessions();
+```
+
+> [!WARNING]
+> This invalidates all sessions immediately. You'll need to create and register a new session to transact again.
+
+### exportSession()
+
+```typescript
+exportSession(): string
+```
+
+Export the current session as a base64-encoded token for use in CLI or other tools.
+
+```typescript
+const token = sdk.exportSession();
+console.log('Session token:', token);
+
+// Use in Cavos CLI
+// export CAVOS_TOKEN="<token>"
+// cavos balance
+```
+
+> [!NOTE]
+> Only export sessions when `walletStatus.isSessionActive` is `true`.
 
 ## Onramp
 

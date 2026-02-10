@@ -1,0 +1,98 @@
+---
+title: "Installation"
+description: "Install and configure the Cavos CLI"
+---
+
+## Prerequisites
+
+- Node.js 18 or higher
+- A Cavos account with an active session (from the [Dashboard](https://cavos.xyz/dashboard))
+
+## Installation
+
+### From Source
+
+Clone and build the CLI from the repository:
+
+```bash
+# Clone the repository
+git clone https://github.com/cavos-labs/cavos.git
+cd cavos/cli
+
+# Install dependencies
+npm install
+
+# Build the CLI
+npm run build
+
+# Link globally (optional)
+npm link
+```
+
+### Verify Installation
+
+```bash
+cavos --version
+```
+
+## Configuration
+
+The Cavos CLI requires a **session token** exported from your dashboard. There are two ways to provide it:
+
+### Option 1: Environment Variable (Recommended)
+
+Set the `CAVOS_TOKEN` environment variable:
+
+```bash
+export CAVOS_TOKEN="<base64_session_token>"
+
+# Now run any command
+cavos whoami
+cavos balance
+```
+
+> [!TIP]
+> Add `export CAVOS_TOKEN="..."` to your `~/.bashrc` or `~/.zshrc` for persistence.
+
+### Option 2: Import Session File
+
+Import the session token once, and it will be saved locally:
+
+```bash
+cavos session import <base64_session_token>
+
+# Session is now saved
+cavos whoami
+```
+
+## Getting a Session Token
+
+1. Go to the [Cavos Dashboard](https://cavos.xyz/dashboard)
+2. Navigate to **Settings** → **Sessions**
+3. Click **"Export Session for CLI"**
+4. Copy the base64 token
+5. Set it as `CAVOS_TOKEN` or import it using `cavos session import`
+
+> [!IMPORTANT]
+> The session token contains your session private key. **Never share it publicly** or commit it to version control.
+
+## Network Configuration
+
+The CLI defaults to **Mainnet**. The network is automatically determined from your session token (configured when you exported it from the dashboard).
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands" icon="terminal" href="/cli/commands">
+    View all available CLI commands
+  </Card>
+  <Card title="Session Management" icon="key" href="/cli/session-management">
+    Learn about session lifecycle and policies
+  </Card>
+  <Card title="AI Agents" icon="robot" href="/cli/ai-agents">
+    Integrate the CLI with AI agents
+  </Card>
+  <Card title="Examples" icon="code" href="/cli/examples">
+    Common usage patterns and workflows
+  </Card>
+</CardGroup>

@@ -48,12 +48,18 @@ function MyComponent() {
     isLoading,
     hasActiveSession,
     requiresWalletCreation,
+    walletStatus,           // NEW: Detailed wallet state
     
     // Actions
     login,
+    register,
     createWallet,
     execute,
     signMessage,
+    registerCurrentSession, // Register current login session
+    revokeSession,          // Revoke specific session
+    emergencyRevokeAllSessions,  // Revoke all sessions
+    exportSession,          // Export session for CLI
     logout,
     deleteAccount,
     retryWalletUnlock,
@@ -77,6 +83,7 @@ function MyComponent() {
 | `isLoading` | boolean | SDK is initializing or processing |
 | `hasActiveSession` | boolean | Session is active and not expired |
 | `requiresWalletCreation` | boolean | User needs to create wallet (shows modal) |
+| `walletStatus` | WalletStatus | Detailed wallet deployment and session state |
 
 ### Action Methods
 
@@ -202,11 +209,137 @@ await cavos.resendVerificationEmail('user@example.com');
 // Get wallet balance
 const balance = await cavos.getBalance();
 
-// Check if account is deployed
 const deployed = await cavos.isAccountDeployed();
 ```
 
-## useSession Hook
+#### WalletStatus
+
+The `walletStatus` object provides detailed information about your wallet's on-chain state:
+
+```typescript
+interface WalletStatus {
+  isDeployed: boolean;      // Account contract is deployed on-chain
+  isSessionActive: boolean; // Session key is registered and not expired
+  isReady: boolean;         // Wallet is fully deployed and ready for transactions
+}
+```
+
+**Example Usage:**
+
+```tsx
+const { walletStatus, address } = useCavos();
+
+if (!address) {
+  return <LoginButton />;
+}
+
+// Check deployment status
+if (!walletStatus.isDeployed) {
+  return <p>Deploying wallet...</p>;
+}
+
+// Check session status
+if (!walletStatus.isSessionActive) {
+  return <button onClick={registerSession}>Activate Session</button>;
+}
+
+// Ready for transactions!
+return <TransactionButtons />;
+```
+
+> [!NOTE]
+> `walletStatus.isReady` is `true` only when both `isDeployed` and `isSessionActive` are `true`.
+> [!NOTE]
+> `walletStatus.isReady` is `true` only when both `isDeployed` and `isSessionActive` are `true`.
+
+## Session Management Methods
+
+### registerSession()
+
+Register a session key on-chain. This activates your session and enables signature-free transactions.
+
+```tsx
+const { registerSession, walletStatus } = useCavos();
+
+if (!walletStatus.isSessionActive) {
+  const txHash = await registerSession();
+  console.log('Session registered:', txHash);
+}
+```
+
+> [!IMPORTANT]
+> After calling `registerSession()`, `walletStatus.isSessionActive` will automatically update to `true`.
+
+### revokeSession(sessionKey?)
+
+Revoke a session key on-chain. If no `sessionKey` is provided, revokes the current active session.
+
+```tsx
+const { revokeSession } = useCavos();
+
+// Revoke current session
+await revokeSession();
+
+// Or revoke a specific session
+await revokeSession('0x123abc...');
+```
+
+> [!NOTE]
+> This operation requires JWT verification on-chain and uses the OAuth signature.
+
+### emergencyRevokeAllSessions()
+
+Revoke **all** active sessions for the wallet. Use this if you suspect a session key has been compromised.
+
+```tsx
+const { emergencyRevokeAllSessions } = useCavos();
+
+if (confirm('This will revoke all sessions. Continue?')) {
+  await emergencyRevokeAllSessions();
+}
+```
+
+> [!WARNING]
+> This invalidates all sessions immediately. You'll need to create and register a new session to transact again.
+
+### exportSession()
+
+Export the current session as a base64-encoded token for use in the Cavos CLI or other tools.
+
+```tsx
+const { exportSession, walletStatus } = useCavos();
+
+// Only export when session is active
+if (walletStatus.isSessionActive) {
+  const token = exportSession();
+  
+  // Copy to clipboard
+  navigator.clipboard.writeText(token);
+  
+  // Or display for user to copy
+  console.log('Session token:', token);
+  console.log('Use in CLI: export CAVOS_TOKEN=' + token);
+}
+```
+
+**CLI Usage:**
+
+Once exported, the session token can be used in the Cavos CLI:
+
+```bash
+# Set environment variable
+export CAVOS_TOKEN="<base64_token>"
+
+# Or import directly
+cavos session import <base64_token>
+
+# Now execute CLI commands
+cavos balance
+cavos transfer --to 0x... --amount 1.5 --token STRK
+```
+
+> [!NOTE]
+> The exported token contains the session private key and wallet address. Store it securely and never share it publicly.
 
 Manage session keys for signature-free transactions:
 

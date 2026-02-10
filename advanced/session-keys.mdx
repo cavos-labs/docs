@@ -134,7 +134,57 @@ const { emergencyRevokeAllSessions } = useCavos();
 await emergencyRevokeAllSessions();
 ```
 
-## Security Properties
+## Session Export/Import
+
+For advanced use cases like command-line tools or multi-device workflows, you can export active sessions and import them elsewhere.
+
+### Export Session from Dashboard
+
+Export your current active session as a base64-encoded token:
+
+```typescript
+const { exportSession, walletStatus } = useCavos();
+
+// Only export when session is active
+if (walletStatus.isSessionActive) {
+  const token = exportSession();
+  
+  // Copy to clipboard
+  navigator.clipboard.writeText(token);
+  console.log('Session exported!');
+}
+```
+
+> [!WARNING]
+> The exported token contains your session private key. Store it securely and never share it publicly.
+
+### Import Session in CLI
+
+Once exported, the session can be used in the Cavos CLI without any login:
+
+```bash
+# Set as environment variable
+export CAVOS_TOKEN="<base64_token>"
+
+# Or import directly
+cavos session import <base64_token>
+
+# Execute commands
+cavos balance
+cavos transfer --to 0x... --amount 1.5 --token STRK --wait
+cavos approve --spender 0x... --amount 100 --token STRK
+```
+
+### Use Cases
+
+1. **AI Agents**: Export session from your dashboard, give it to an AI agent for autonomous trading/transactions
+2. **CI/CD Pipelines**: Automate on-chain deployments without manual signing
+3. **Multi-Device**: Use the same session on desktop dashboard and mobile/server CLI
+4. **Batch Operations**: Execute multiple transactions quickly from command line
+
+> [!NOTE]
+> Exported sessions have the same policies (spending limits, allowed contracts) as configured in the dashboard.
+
 
 - **Non-Custodial**: Neither Cavos nor the application ever sees your session private key. It lives only in your browser's memory.
 - **Auto-Expiry**: Sessions automatically expire, minimizing the impact of a lost device or session key.
