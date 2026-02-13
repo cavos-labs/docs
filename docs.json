@@ -76,6 +76,12 @@
         "tab": "API Reference",
         "groups": [
           {
+            "group": "Management API",
+            "pages": [
+              "api-reference/management-api"
+            ]
+          },
+          {
             "group": "SDK Classes",
             "pages": [
               "api-reference/cavos-sdk",
