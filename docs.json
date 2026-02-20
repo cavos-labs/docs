@@ -67,7 +67,8 @@
               "advanced/message-signing",
               "advanced/email-customization",
               "advanced/security",
-              "advanced/error-handling"
+              "advanced/error-handling",
+              "advanced/paymaster"
             ]
           }
         ]
