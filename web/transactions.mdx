@@ -12,28 +12,20 @@ Cavos uses **session keys** for all transactions. After creating a session, user
 
 ## Prerequisites
 
-Before executing transactions, you need an active session:
+Before executing transactions, you need to be authenticated. After `login()`, account deployment and session registration happen automatically:
 
 ```tsx
-import { useCavos, useSession } from '@cavos/react';
+import { useCavos } from '@cavos/react';
 
 function App() {
-  const { login } = useCavos();
-  const { createSession, hasActiveSession } = useSession();
+  const { login, walletStatus } = useCavos();
 
   const handleSetup = async () => {
-    await login('google');
-    await createSession({
-      allowedMethods: [
-        { contractAddress: '0x...', selector: 'transfer' },
-        { contractAddress: '0x...', selector: 'approve' },
-      ],
-      expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
-    });
+    await login('google'); // Deploy + register session happen automatically
   };
 
-  if (!hasActiveSession) {
-    return <button onClick={handleSetup}>Setup Wallet</button>;
+  if (!walletStatus.isReady) {
+    return <button onClick={handleSetup}>Login with Google</button>;
   }
 
   return <TransactionUI />;
@@ -45,11 +37,10 @@ function App() {
 Once a session is active, transactions execute without prompts:
 
 ```tsx
-import { useCavos, useSession } from '@cavos/react';
+import { useCavos } from '@cavos/react';
 
 function TransferButton() {
-  const { execute } = useCavos();
-  const { hasActiveSession } = useSession();
+  const { execute, walletStatus } = useCavos();
 
   const handleTransfer = async () => {
     // No signature popup! Session key signs automatically
@@ -63,7 +54,7 @@ function TransferButton() {
   };
 
   return (
-    <button onClick={handleTransfer} disabled={!hasActiveSession}>
+    <button onClick={handleTransfer} disabled={!walletStatus.isReady}>
       Transfer (Signature-Free)
     </button>
   );
@@ -152,16 +143,11 @@ try {
   const txHash = await execute(calls);
   console.log('Success:', txHash);
 } catch (error) {
-  if (error.message.includes('not allowed by session')) {
-    // Call not in session policy
-    console.error('This action is not authorized by your session');
-  } else if (error.message.includes('No active session')) {
-    // Session expired or not created
-    await createSession(policy);
-  } else if (error.message.includes('Session has expired')) {
-    // Re-authenticate and create new session
+  if (error.message.includes('SESSION_EXPIRED')) {
+    // Session expired beyond grace period — user must re-login
     await login('google');
-    await createSession(policy);
+  } else if (error.message.includes('Spending limit exceeded')) {
+    alert('This transaction exceeds your spending limit.');
   } else {
     // Contract execution error
     console.error('Transaction failed:', error);
@@ -221,21 +207,22 @@ await execute([
 
 | State | `execute()` Behavior |
 |-------|---------------------|
-| No session | Throws "No active session" |
-| Active session | Signs with session key ✅ |
-| Expired session | Throws "Session has expired" |
-| Method not in policy | Throws "not allowed by session" |
+| Not authenticated | Throws "Wallet not initialized" |
+| Session registered | Signs with session key ✅ |
+| Session not registered yet | Auto-uses JWT signature (registers + executes atomically) |
+| Expired (within grace) | Auto-renews session, then executes |
+| Expired (beyond grace) | Throws "SESSION_EXPIRED" — re-login required |
 
-To check session state before executing:
+To check wallet state before executing:
 
 ```tsx
-const { hasActiveSession } = useSession();
+const { walletStatus } = useCavos();
 
-if (!hasActiveSession) {
-  // Prompt user to create session
-  await createSession(policy);
+if (!walletStatus.isReady) {
+  // Wallet still setting up (deploying or registering session)
+  return <p>Setting up wallet...</p>;
 }
 
-// Now safe to execute
+// Safe to execute
 await execute(calls);
 ```

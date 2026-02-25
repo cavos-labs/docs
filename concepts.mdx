@@ -172,40 +172,35 @@ Account Class Hash: [OAuth Account with JWT verification]
 
 ### Deployment
 
-Accounts are deployed lazily on first transaction. Cavos handles this automatically:
+Accounts are deployed **automatically after login**. Cavos handles this entirely in the background:
 
 1. Wallet address is computed deterministically from OAuth identity
 2. Account can receive funds before deployment (precomputed address)
-3. On first transaction:
-   - Account deploys itself using JWT signature
-   - Session key is registered on-chain
-   - Transaction executes in same call
-4. Subsequent transactions use lightweight session key signature
+3. After login, the SDK automatically:
+   - Deploys the account contract via paymaster (gasless)
+   - Registers the session key on-chain using the JWT signature
+   - Updates `walletStatus.isReady = true` when complete
+4. All subsequent transactions use the lightweight session key signature
 
-**Key Insight**: No relayer needed! The account deploys itself via paymaster using the JWT signature.
+**Key Insight**: No relayer needed and no manual steps! Deploy + session registration happen automatically after `login()`.
 
 ## Transaction Flow
 
-### First Transaction (Deployment + Register)
+### After Login (Automatic Setup)
 
 ```
-User calls execute()
+User calls login('google')
   ↓
-SDK signs with session key
+SDK authenticates + generates session key
   ↓
-Includes full JWT + RSA signature
+SDK auto-deploys account (if needed)
+  → JWT RSA signature verified on-chain
+  → Session key registered on-chain
   ↓
-AVNU Paymaster builds transaction
-  ↓
-On-chain:
-  1. Deploy account contract
-  2. Verify JWT RSA signature
-  3. Validate nonce matches session key
-  4. Register session key
-  5. Execute transaction
+walletStatus.isReady = true ✅
 ```
 
-### Subsequent Transactions
+### Transactions (All Automatic)
 
 ```
 User calls execute()
@@ -221,6 +216,8 @@ On-chain:
   2. Check key not expired
   3. Execute transaction
 ```
+
+> If the session isn't registered yet (e.g., background registration still in progress), `execute()` automatically falls back to JWT signature to register + execute in one atomic transaction.
 
 ### Session Key Renewal
 

@@ -218,9 +218,11 @@ The `walletStatus` object provides detailed information about your wallet's on-c
 
 ```typescript
 interface WalletStatus {
+  isDeploying: boolean;     // Account is currently being deployed
   isDeployed: boolean;      // Account contract is deployed on-chain
+  isRegistering: boolean;   // Session key is currently being registered
   isSessionActive: boolean; // Session key is registered and not expired
-  isReady: boolean;         // Wallet is fully deployed and ready for transactions
+  isReady: boolean;         // Wallet is fully deployed + session active — ready for transactions
 }
 ```
 
@@ -233,14 +235,16 @@ if (!address) {
   return <LoginButton />;
 }
 
-// Check deployment status
-if (!walletStatus.isDeployed) {
-  return <p>Deploying wallet...</p>;
-}
-
-// Check session status
-if (!walletStatus.isSessionActive) {
-  return <button onClick={registerSession}>Activate Session</button>;
+// After login, deploy + session registration happen automatically.
+// The consumer only needs to observe walletStatus:
+if (!walletStatus.isReady) {
+  return (
+    <div>
+      {walletStatus.isDeploying && <p>Deploying wallet...</p>}
+      {walletStatus.isRegistering && <p>Registering session...</p>}
+      <span className="loading" />
+    </div>
+  );
 }
 
 // Ready for transactions!
@@ -248,9 +252,7 @@ return <TransactionButtons />;
 ```
 
 > [!NOTE]
-> `walletStatus.isReady` is `true` only when both `isDeployed` and `isSessionActive` are `true`.
-> [!NOTE]
-> `walletStatus.isReady` is `true` only when both `isDeployed` and `isSessionActive` are `true`.
+> `walletStatus.isReady` is `true` only when the account is deployed **and** the session is registered. Both steps happen automatically after `login()` — no manual calls needed.
 
 ## Session Management Methods
 

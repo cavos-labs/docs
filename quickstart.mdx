@@ -173,10 +173,10 @@ function TransferButton() {
 ```
 
 **How it works:**
-1. After login, SDK generates an session key
-2. First transaction: Deploys account + registers session key + executes
-3. Subsequent transactions: Signed with session key (fast & cheap)
-4. All transactions are **gasless** via AVNU Paymaster
+1. After login, SDK generates a session key
+2. SDK automatically deploys the account (if needed) and registers the session — no manual steps
+3. `walletStatus.isReady` becomes `true` when the wallet is fully operational
+4. All transactions are signed with session key (fast & cheap) and **gasless** via AVNU Paymaster
 5. Session keys expire after ~24 hours and auto-renew
 
 ## The Flow
@@ -195,16 +195,17 @@ sequenceDiagram
     SDK->>EK: Generate session keypair
     SDK-->>SDK: Derive wallet address
 
-    U->>SDK: 2. execute(tx) [First time]
-    SDK->>EK: Sign with session key
-    SDK-->>Chain: Deploy + Register + Execute
-    Note over Chain: Verifies JWT RSA signature<br/>Registers session key
+    SDK->>Chain: 2. Auto-deploy account (if needed)
+    Note over Chain: Verifies JWT RSA signature
+    SDK->>Chain: 3. Auto-register session key
+    Note over Chain: Session key stored on-chain
+    Note over SDK: walletStatus.isReady = true ✅
 
-    U->>SDK: 3. execute(tx)
+    U->>SDK: 4. execute(tx)
     SDK->>EK: Sign with session key
     EK-->>Chain: Gasless transaction ✓
 
-    U->>SDK: 4. execute(tx)
+    U->>SDK: 5. execute(tx)
     SDK->>EK: Sign with session key
     EK-->>Chain: Gasless transaction ✓
 
