@@ -13,7 +13,7 @@ Cavos creates **self-custodial StarkNet wallets** tied to your OAuth identity (G
 flowchart TD
     A[User Authenticates] --> B[Provider Issues JWT]
     B --> C[SDK Generates Session Key]
-    C --> D[Compute Nonce = Poseidon hash]
+    C --> D[Compute Nonce = Poseidon of pubkey halves + max_block + randomness]
     D --> E[Derive Wallet Address]
     E --> F[Deploy Account with JWT Signature]
     F --> G[Execute Transactions with Session Key]
@@ -31,8 +31,8 @@ flowchart TD
 1. **User Authenticates**: Login with Google, Apple, or Firebase email/password
 2. **JWT Issued**: Provider returns a signed JWT token with user identity
 3. **Session Key Generated**: SDK creates a temporary ECDSA keypair (Stark curve)
-4. **Nonce Computation**: `nonce = Poseidon(sessionPubKey, maxBlock, randomness)`
-5. **Address Derivation**: `addressSeed = Poseidon(sub, app_salt)` → deterministic wallet address
+4. **Nonce Computation**: `nonce = Poseidon(eph_pubkey_lo, eph_pubkey_hi, max_block, randomness)` — embedded in the JWT before the OAuth redirect
+5. **Address Derivation**: `addressSeed = Poseidon(sub, salt)` → deterministic wallet address
 6. **On-Chain Verification**: Smart contract verifies JWT RSA signature and registers session key
 
 ### JWT Verification On-Chain
@@ -43,7 +43,7 @@ Unlike traditional session keys, Cavos uses **JWT signature verification** direc
 // JWT contains:
 {
   sub: "google-oauth2|123456",  // User ID from provider
-  nonce: "0x...",                // Poseidon hash of session key
+  nonce: "0x...",               // Poseidon(eph_pubkey_lo, eph_pubkey_hi, max_block, randomness)
   iss: "https://accounts.google.com",
   aud: "your-client-id",
   exp: 1234567890
@@ -51,8 +51,9 @@ Unlike traditional session keys, Cavos uses **JWT signature verification** direc
 ```
 
 **On first transaction:**
-- Contract verifies RSA-2048 signature of JWT
-- Validates nonce matches session public key
+- Contract fetches the RSA-2048 public key from the on-chain JWKS registry
+- Garaga's `is_valid_rsa2048_sha256_signature` verifies the JWT RSA-2048 signature (~11.8M gas)
+- Validates nonce matches the registered session public key
 - Registers session key for this session
 - Executes transaction
 
@@ -60,6 +61,20 @@ Unlike traditional session keys, Cavos uses **JWT signature verification** direc
 - Signed with lightweight session key signature
 - No need to re-verify full JWT
 - Much cheaper gas cost
+
+### JWKS Registry & Argus
+
+The RSA public keys used for JWT verification are stored on-chain in the **JWKS registry**. Keys are registered permissionlessly via **Argus** (the trustless JWKS registry v2):
+
+- **Permissionless**: Anyone can submit a proof to register or update a key
+- **Trustless**: Keys are registered via Reclaim zkFetch proofs—no admin approval required
+- **Hardcoded providers**: Argus accepts keys only from Google, Apple, and Firebase JWKS endpoints (verified by URL hash, not configurable at runtime)
+- **Key format**: Each RSA-2048 public key is stored as 24 × felt252 values (96-bit limbs in Garaga's RSA2048Chunks format)
+
+| Network | JWKSRegistry | Argus (trustless) |
+|---------|-------------|-------------------|
+| Sepolia | `0x0112c6a8a69e4d9a2e74b4638e1495d69266de9f6f796727d4a52a7ab0a48db2` | `0x07cd8487786091e4a2c1841cad4e16b815d61a068383c2a2b15dcb2415f1d767` |
+| Mainnet | `0x076ff6853197538b4d4c925b2c775014fae9b5c14f63262b13f2e49f732e21f7` | `0x00cbcd49655919c0628fd7d999f8aadcb167a0450a75f9dfffef8ad8175f1de4` |
 
 ### Session Keys
 
@@ -72,11 +87,11 @@ Session keys are temporary signing keys that expire after a configured duration:
 | **Renewal** | Can generate new session key and re-register |
 | **Revocation** | Automatic on expiry or manual logout |
 
-**Key Differences from Session Keys:**
-- No policy restrictions (full wallet control)
+**Key properties of session keys:**
+- No master private key ever exists — sessions are the only signing mechanism
 - Registered on-chain via JWT verification
-- Expire based on block height, not timestamp
-- Can be renewed during grace period
+- Expire based on block height (`max_block`), not wall-clock time
+- Can be renewed during a grace period without a fresh OAuth login
 
 ### Security Model
 
@@ -97,19 +112,20 @@ Session keys are temporary signing keys that expire after a configured duration:
 Wallet addresses are computed deterministically:
 
 ```
-addressSeed = Poseidon(sub, app_salt)
+addressSeed = Poseidon(sub, salt)
 
-walletAddress = calculateContractAddressFromHash(
-  salt: addressSeed,
-  classHash: cavosAccountClassHash,
-  constructorCalldata: [addressSeed, jwksRegistryAddress, deployerAddress],
-  deployer: 0x0
+walletAddress = calculate_contract_address_from_hash(
+  salt:                 addressSeed,
+  class_hash:           cavosAccountClassHash,
+  constructor_calldata: [addressSeed, jwksRegistryAddress],
+  deployer_address:     0x0
 )
 ```
 
-- **sub**: OAuth user ID (Google: `google-oauth2|123`, Firebase: `uid`)
-- **app_salt**: Per-app salt (isolates wallets between apps)
-- **Same user + Same app = Same wallet address**
+- **sub**: OAuth user ID (e.g. Google's `sub` claim, Firebase UID)
+- **salt**: Per-app salt derived from your App ID (isolates wallets between apps)
+- **cavosAccountClassHash**: `0x5426dc61fb0cbbe0a04ab63d926f321552ece71e2014c6a42faab493385e0a2`
+- **Same user + Same app = Same wallet address, every time**
 
 ## Authentication Methods
 
@@ -159,7 +175,7 @@ Cavos uses AVNU's paymaster infrastructure:
 Starknet has native account abstraction, meaning every account is a smart contract. Cavos wallets use a **custom OAuth account contract**:
 
 ```
-Account Class Hash: [OAuth Account with JWT verification]
+Account Class Hash: 0x5426dc61fb0cbbe0a04ab63d926f321552ece71e2014c6a42faab493385e0a2
 ```
 
 ### Account Features

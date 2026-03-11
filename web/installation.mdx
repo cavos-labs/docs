@@ -38,11 +38,12 @@ Wrap your application with `CavosProvider` at the root level:
 ```tsx
 import { CavosProvider } from '@cavos/react';
 
+const config = {
   appId: 'your-app-id',
   network: 'sepolia', // 'sepolia' | 'mainnet'
   session: {
     defaultPolicy: {
-      allowedContracts: ['0x049d...'],
+      allowedContracts: ['0x049d...'],       // contracts the session key may call
       spendingLimits: [{ token: '0x049d...', limit: 10n * 10n**18n }],
       maxCallsPerTx: 10
     }
@@ -112,21 +113,6 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
-```
-
-### Passkey Modal Customization
-
-The SDK includes a built-in passkey modal for wallet creation. Customize it via config:
-
-```tsx
-const config = {
-  appId: 'your-app-id',
-  passkeyModal: {
-    title: 'Secure Your Wallet',
-    description: 'Use biometrics to protect your funds',
-    buttonText: 'Enable Passkey',
-  },
-};
 ```
 
 ## Exports

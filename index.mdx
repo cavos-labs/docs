@@ -26,12 +26,13 @@ Cavos provides verifiable, MPC-free OAuth wallet infrastructure for Starknet app
 
 Cavos creates **self-custodial wallets** tied to your OAuth identity:
 
-1. **User authenticates** with Google, Apple, or Firebase email/password
+1. **User authenticates** with Google, Apple, Firebase email/password, or Passkey
 2. **Provider issues JWT** token with user identity (sub claim)
-3. **Wallet address derived** deterministically from OAuth user ID
-4. **Ephemeral key generated** for transaction signing (~24 hour lifetime)
-5. **First transaction** deploys account + registers session key via JWT verification
-6. **All transactions** signed automatically with session key - no prompts needed
+3. **Wallet address derived** deterministically: `addressSeed = Poseidon(sub, salt)` → contract address
+4. **Ephemeral session key generated** for transaction signing (~24 hour lifetime)
+5. **Nonce computed**: `Poseidon(eph_pubkey_lo, eph_pubkey_hi, max_block, randomness)` — embedded in JWT
+6. **First transaction** deploys account + registers session key via on-chain JWT verification
+7. **All transactions** signed automatically with session key — no prompts needed
 
 > [!NOTE]
 > Your wallet address is computed from your OAuth identity. There are no private keys to manage - your Google/Apple/Firebase account IS your wallet.
@@ -138,12 +139,13 @@ function WalletDemo() {
 ## How It Works Under the Hood
 
 **First Transaction:**
-1. SDK signs transaction with session key
-2. Includes full JWT + RSA signature in calldata
-3. Account contract deploys itself via paymaster
-4. Contract verifies JWT RSA signature on-chain
-5. Ephemeral key is registered
-6. Transaction executes
+1. SDK generates session key and computes nonce (Poseidon of pubkey + max_block + randomness)
+2. After OAuth, JWT contains that nonce in its `nonce` claim
+3. SDK submits calldata including the JWT bytes and Garaga RSA-2048 hint (≈864 felt252 values)
+4. Account contract deploys itself via AVNU Paymaster (gasless)
+5. Contract fetches the RSA public key from the on-chain JWKS registry (managed by Argus)
+6. Garaga's `is_valid_rsa2048_sha256_signature` verifies the JWT RSA-2048 signature (~11.8M gas)
+7. Session key is registered; transaction executes
 
 **Subsequent Transactions:**
 1. SDK signs with session key (lightweight signature)

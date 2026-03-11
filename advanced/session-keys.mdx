@@ -15,7 +15,7 @@ flowchart TB
     
     subgraph session["Session Creation"]
         SK["Session Key Pair\n(generated client-side)"]
-        NONCE["Nonce = Hash(pubKey, block, duration)"]
+        NONCE["Nonce = Poseidon(pubkey_lo, pubkey_hi, max_block, randomness)"]
     end
     
     subgraph verified["On-Chain Verification"]
@@ -41,20 +41,23 @@ flowchart TB
 
 ### 1. Session Initialization (Pre-Login)
 
-When you call `login()`, the SDK:
+When you call `login()`, the SDK generates a session key pair and computes a nonce **before** the OAuth redirect:
 
 ```typescript
 // Generated BEFORE OAuth redirect
-const sessionPrivateKey = generateStarkKey();  // Random 252-bit key
+const sessionPrivateKey = generateStarkKey();  // Random 252-bit Stark key
 const sessionPubKey = derivePublicKey(sessionPrivateKey);
 
-// Compute nonce that binds the JWT to this session
+// Split pubkey into two 128-bit halves (lo/hi)
+const eph_pubkey_lo = sessionPubKey & ((1n << 128n) - 1n);
+const eph_pubkey_hi = sessionPubKey >> 128n;
+
+// Compute nonce that binds the JWT to this session key and block range
 const nonce = poseidon([
-  sessionPubKey,
-  currentBlock,
-  sessionDuration,
-  renewalGracePeriod,
-  randomness
+  eph_pubkey_lo,
+  eph_pubkey_hi,
+  max_block,     // block height after which the session expires
+  randomness     // random value for replay protection
 ]);
 ```
 
@@ -86,25 +89,56 @@ This generates a **new session key pair** and registers it on-chain using the ol
 
 ## Session Policies
 
-Session keys can be restricted by **policies** to limit the damage if a session key is compromised.
+Session keys can be restricted by **policies** to limit the damage if a session key is compromised. Policies are enforced by the account contract on every transaction. They are set at session registration time and cannot be changed without creating a new session.
 
-### 1. Allowed Contracts
-You can restrict a session key to only be able to call specific contract addresses. This is implemented using a Merkle Tree of allowed contract addresses on-chain.
+```typescript
+// Policy shape (matches CavosProvider session.defaultPolicy)
+const policy = {
+  allowedContracts: string[],                              // contract addresses the session may call
+  spendingLimits?: Array<{ token: string, limit: bigint }>, // max spend per token
+  maxCallsPerTx?: number,                                   // max calls in a single multicall
+};
+```
 
-If a transaction attempts to call a contract not in the allowed list, the account contract will reject it.
+### `allowedContracts`
 
-### 2. Spending Limits
-You can define maximum spending limits for specific tokens (e.g., STRK, ETH) per session. The account contract tracks the total amount spent by the session and prevents exceeding the limit.
+Restricts the session key to specific contract addresses. Any call to a contract **not** in this list is rejected by the account contract at the validation step.
+
+```typescript
+allowedContracts: [
+  '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7', // ETH
+  '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d', // STRK
+]
+```
+
+### `spendingLimits`
+
+Caps the total amount of a given token the session key can transfer. The account contract accumulates spend across all transactions and rejects any call that would exceed the limit.
+
+```typescript
+spendingLimits: [
+  { token: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d', limit: 10n * 10n**18n }, // 10 STRK
+]
+```
+
+### `maxCallsPerTx`
+
+Limits the number of calls that may be bundled into a single multicall transaction. Useful for preventing automated abuse.
+
+```typescript
+maxCallsPerTx: 5
+```
 
 ```mermaid
 flowchart LR
     TX[Transaction] --> Policy{Policy Check}
     Policy -->|Allowed| Execute[Execute Call]
     Policy -->|Denied| Reject[Rejection]
-    
-    subgraph Limits
-        Direction[Allowed Contracts]
-        Amount[Spending Limits]
+
+    subgraph Checks
+        Contracts[allowedContracts]
+        Limits[spendingLimits]
+        Calls[maxCallsPerTx]
     end
 ```
 

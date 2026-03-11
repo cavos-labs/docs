@@ -12,33 +12,40 @@ Cavos uses a **non-custodial OAuth-based wallet** architecture. Users authentica
 ### Wallet Derivation
 
 ```
-wallet_address = Contract(Poseidon(user_sub, app_salt), class_hash, registry)
+addressSeed   = Poseidon(user_sub, salt)
+wallet_address = calculate_contract_address_from_hash(
+  salt:                 addressSeed,
+  class_hash:           cavosAccountClassHash,
+  constructor_calldata: [addressSeed, jwksRegistryAddress],
+  deployer_address:     0x0
+)
 ```
 
 | Component | Description |
 |-----------|-------------|
 | `user_sub` | OAuth subject claim (unique per user per provider) |
-| `app_salt` | Per-app salt derived from your App ID |
-| `class_hash` | Cavos Account contract class hash |
-| `registry` | JWKS registry address for JWT verification |
+| `salt` | Per-app salt derived from your App ID |
+| `class_hash` | `0x5426dc61fb0cbbe0a04ab63d926f321552ece71e2014c6a42faab493385e0a2` |
+| `jwksRegistryAddress` | On-chain JWKS registry holding RSA public keys |
 
 <Info>
 The wallet address is **deterministic**—same user + same app always produces the same wallet. No private key storage required.
 </Info>
 
-### Session Keys (Session Keys)
+### Session Keys
 
 Instead of storing master private keys, Cavos uses short-lived **session keys**:
 
-1. **Session Creation**: SDK generates a fresh session key pair on each login
-2. **JWT Binding**: The ephemeral public key is embedded in the JWT nonce
-3. **On-chain Registration**: The smart contract verifies the JWT and registers the session key
-4. **Transaction Signing**: All transactions are signed with the session key
+1. **Session Creation**: SDK generates a fresh ECDSA keypair on each login
+2. **Nonce Binding**: `nonce = Poseidon(eph_pubkey_lo, eph_pubkey_hi, max_block, randomness)` is embedded in the JWT before the OAuth redirect
+3. **On-chain Registration**: The smart contract verifies the JWT RSA signature and registers the session key
+4. **Transaction Signing**: All subsequent transactions are signed with the session key
 
 ```
 ┌─────────────┐     ┌───────────────┐     ┌──────────────┐
 │ Google JWT  │ ──► │ Cavos Account │ ──► │ Session Key  │
-│ (proof)     │     │ (verifies)    │     │ (signs txs)  │
+│ (proof)     │     │ (verifies     │     │ (signs txs)  │
+│             │     │  RSA-2048)    │     │              │
 └─────────────┘     └───────────────┘     └──────────────┘
 ```
 
@@ -86,20 +93,33 @@ Each app registered on Cavos gets its own **app salt**, ensuring:
 
 The Cavos Account smart contract verifies every transaction:
 
-1. **JWT Signature**: Verified against Google/Apple JWKS public keys stored on-chain
-2. **Nonce Validation**: Ensures JWT was issued for this specific session
-3. **Expiration Check**: JWT and session must be within validity period
-4. **Session Key**: Ephemeral key must match JWT-registered session
+1. **JWT Signature**: RSA-2048 verification using Garaga v1.0.1+ (`is_valid_rsa2048_sha256_signature`, ~11.8M L2 gas). The RSA public key (stored as 24 × felt252 in 96-bit limbs) is fetched from the on-chain JWKS registry.
+2. **Nonce Validation**: Ensures `Poseidon(eph_pubkey_lo, eph_pubkey_hi, max_block, randomness)` in the JWT matches the registered session
+3. **Expiration Check**: JWT `exp` and session `max_block` must be within validity period
+4. **Session Key**: Ephemeral Stark key must match JWT-registered session
 
 ```cairo
 // Simplified verification flow
 fn validate_transaction(jwt, session_sig) {
-    verify_jwt_signature(jwt, jwks_registry);
+    let key = jwks_registry.get_key_if_valid(kid);   // 24×felt252 RSA2048Chunks
+    is_valid_rsa2048_sha256_signature(jwt_bytes, key, hint);  // Garaga
     verify_nonce_matches(jwt.nonce, session.ephemeral_pub);
     verify_session_not_expired(session.max_block);
     verify_ecdsa_signature(session_sig, session.ephemeral_pub);
 }
 ```
+
+### JWKS Registry & Argus
+
+RSA public keys are managed by two complementary on-chain contracts:
+
+- **JWKSRegistry**: Stores active RSA-2048 keys (24 × felt252 per key in Garaga RSA2048Chunks format)
+- **Argus** (trustless JWKS v2): Permissionless key registration via Reclaim zkFetch proofs. Accepts keys only from hardcoded Google, Apple, and Firebase JWKS endpoints—no admin required and no mutable whitelist.
+
+| Network | JWKSRegistry | Argus |
+|---------|-------------|-------|
+| Sepolia | `0x0112c6a8a69e4d9a2e74b4638e1495d69266de9f6f796727d4a52a7ab0a48db2` | `0x07cd8487786091e4a2c1841cad4e16b815d61a068383c2a2b15dcb2415f1d767` |
+| Mainnet | `0x076ff6853197538b4d4c925b2c775014fae9b5c14f63262b13f2e49f732e21f7` | `0x00cbcd49655919c0628fd7d999f8aadcb167a0450a75f9dfffef8ad8175f1de4` |
 
 ## Attack Vectors & Mitigations
 
@@ -107,8 +127,8 @@ fn validate_transaction(jwt, session_sig) {
 
 If Google/Apple's signing keys are compromised:
 - **Risk**: Attacker could forge JWTs
-- **Mitigation**: JWKS registry on-chain; Cavos monitors and updates
-- **Mitigation**: Session bound to specific session key generated client-side
+- **Mitigation**: JWKS registry on-chain. Old keys can be deactivated; Argus enables permissionless rotation when providers publish new keys.
+- **Mitigation**: Session bound to a specific client-side-generated session key via the nonce
 
 ### Browser XSS
 
