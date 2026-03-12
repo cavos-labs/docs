@@ -1,6 +1,6 @@
 ---
 title: "Transactions"
-description: "Execute gasless transactions with session keys"
+description: "Execute gasless or user-paid transactions with session keys"
 ---
 
 ## Overview
@@ -43,7 +43,7 @@ function TransferButton() {
   const { execute, walletStatus } = useCavos();
 
   const handleTransfer = async () => {
-    // No signature popup! Session key signs automatically
+    // No signature popup! Session key signs automatically. Gas is sponsored.
     const txHash = await execute({
       contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
       entrypoint: 'transfer',
@@ -74,7 +74,7 @@ interface Call {
 ```
 
 > [!IMPORTANT]
-> The call must match a method in your session policy's `allowedMethods`. Calls to unauthorized methods will fail.
+> The call must match a contract in your session policy's `allowedContracts`. Calls to unauthorized contracts will fail.
 
 ## Multiple Calls (Multicall)
 
@@ -95,23 +95,55 @@ const txHash = await execute([
 ]);
 ```
 
-All calls succeed or fail together. This is useful for:
-- Approve + Swap
-- Multi-token transfers
-- Complex DeFi operations
+All calls succeed or fail together.
 
-## Gasless by Default
+## Gas Options
 
-All transactions through session keys are **gasless**:
+`execute()` accepts an optional `options` object to control gas sponsorship:
 
-- User pays nothing
-- Gas is sponsored by AVNU Paymaster
-- No ETH balance required
+```typescript
+execute(calls, options?: { gasless?: boolean })
+```
+
+### Gasless (Default)
+
+Gas is sponsored by the Cavos Paymaster. Users pay nothing and need no STRK balance.
 
 ```tsx
-// All of these are gasless:
-await execute({ contractAddress: '...', entrypoint: 'transfer', calldata: [...] });
-await execute([call1, call2, call3]);
+// Both are equivalent — gasless is the default
+await execute(calls);
+await execute(calls, { gasless: true });
+```
+
+### User Pays Gas
+
+Pass `{ gasless: false }` to have the wallet pay its own gas from its STRK balance.
+
+```tsx
+await execute(calls, { gasless: false });
+```
+
+**Requirements for user-paid transactions:**
+- The session must already be registered on-chain (at least one gasless tx must have been executed first, or `registerCurrentSession()` called explicitly).
+- The wallet must hold enough STRK to cover the transaction fee.
+
+> [!NOTE]
+> The SDK estimates fees using a raw `starknet_estimateFee` call (not starknet.js's built-in estimator, which is incompatible with custom account signatures). A 5M L2-gas overhead is added on top to cover `__validate__` execution, which is not included in `SKIP_VALIDATE` estimates.
+
+```tsx
+// Example: opt out of sponsorship for a specific action
+const handleBridgeTx = async () => {
+  try {
+    const txHash = await execute(bridgeCall, { gasless: false });
+    console.log('Bridge tx:', txHash);
+  } catch (err) {
+    if (err.message.includes('non-sponsored transaction without a registered session')) {
+      // Must execute one sponsored tx first to register the session
+      await execute(someOtherCall); // sponsored — registers session
+      // then retry
+    }
+  }
+};
 ```
 
 ## Session Policy Enforcement
@@ -119,13 +151,9 @@ await execute([call1, call2, call3]);
 Transactions are validated against your session policy:
 
 ```tsx
-// Session created with:
 const policy = {
-  allowedMethods: [
-    { contractAddress: TOKEN_A, selector: 'transfer' },
-    { contractAddress: TOKEN_A, selector: 'approve' },
-  ],
-  expiresAt: Date.now() + 60 * 60 * 1000,
+  allowedContracts: [TOKEN_A],
+  maxCallsPerTx: 5,
 };
 
 // ✅ This works (in policy):
@@ -133,7 +161,6 @@ await execute({ contractAddress: TOKEN_A, entrypoint: 'transfer', calldata: [...
 
 // ❌ This fails (not in policy):
 await execute({ contractAddress: TOKEN_B, entrypoint: 'transfer', calldata: [...] });
-// Error: "Method transfer on TOKEN_B not allowed by session"
 ```
 
 ## Error Handling
@@ -146,10 +173,12 @@ try {
   if (error.message.includes('SESSION_EXPIRED')) {
     // Session expired beyond grace period — user must re-login
     await login('google');
+  } else if (error.message.includes('non-sponsored transaction without a registered session')) {
+    // Execute one sponsored tx first, or call registerCurrentSession()
+    await registerCurrentSession();
   } else if (error.message.includes('Spending limit exceeded')) {
     alert('This transaction exceeds your spending limit.');
   } else {
-    // Contract execution error
     console.error('Transaction failed:', error);
   }
 }
@@ -164,10 +193,8 @@ import { RpcProvider } from 'starknet';
 
 const provider = new RpcProvider({ nodeUrl: 'https://...' });
 
-// Wait for transaction to be accepted
 await provider.waitForTransaction(txHash);
 
-// Get receipt
 const receipt = await provider.getTransactionReceipt(txHash);
 console.log('Status:', receipt.finality_status);
 ```
@@ -203,26 +230,32 @@ await execute([
 ]);
 ```
 
+### User-Paid DeFi Action
+
+```tsx
+// For apps where the developer doesn't want to sponsor certain high-value operations
+await execute(
+  [approveCall, depositCall],
+  { gasless: false }
+);
+```
+
 ## Session Lifecycle
 
 | State | `execute()` Behavior |
 |-------|---------------------|
 | Not authenticated | Throws "Wallet not initialized" |
-| Session registered | Signs with session key ✅ |
-| Session not registered yet | Auto-uses JWT signature (registers + executes atomically) |
+| Session not registered | **Gasless only** — uses JWT signature (registers + executes atomically) |
+| Session registered + active | Signs with session key ✅ (gasless or user-pays) |
 | Expired (within grace) | Auto-renews session, then executes |
 | Expired (beyond grace) | Throws "SESSION_EXPIRED" — re-login required |
-
-To check wallet state before executing:
 
 ```tsx
 const { walletStatus } = useCavos();
 
 if (!walletStatus.isReady) {
-  // Wallet still setting up (deploying or registering session)
   return <p>Setting up wallet...</p>;
 }
 
-// Safe to execute
 await execute(calls);
 ```

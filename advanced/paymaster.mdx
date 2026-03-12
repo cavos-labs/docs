@@ -3,7 +3,16 @@ title: "Cavos Paymaster & Gas Management"
 description: "Understand how gasless transactions work behind the scenes using the Cavos Paymaster, Webhooks, and GasTank."
 ---
 
-Cavos is designed to provide **gasless transactions by default**. This means your users never need to hold ETH or STRK to use your decentralized application. 
+Cavos provides **gasless transactions by default** — users never need to hold ETH or STRK. When you need the wallet to pay its own gas, pass `{ gasless: false }` to `execute()`.
+
+```tsx
+// Gasless (default) — gas sponsored by Cavos Paymaster
+await execute(calls);
+
+// User-pays — wallet pays from its own STRK balance
+await execute(calls, { gasless: false });
+```
+
 
 Behind the scenes, Cavos abstracts gas payments using a robust architecture consisting of three core components: the **Paymaster**, the **Webhook Validator**, and the on-chain **GasTank**.
 
