@@ -13,288 +13,226 @@ new CavosSDK(config: CavosConfig)
 
 ```typescript
 interface CavosConfig {
-  appId: string;
-  network?: 'sepolia' | 'mainnet';
-  paymasterApiKey?: string;
-  starknetRpcUrl?: string;
-  enableLogging?: boolean;
-  passkeyModal?: {
-    title?: string;
-    description?: string;
-    buttonText?: string;
-  };
+  appId: string;                        // Required: App ID from https://cavos.xyz/dashboard
+  network?: 'sepolia' | 'mainnet';      // Default: 'sepolia'
+  paymasterApiKey?: string;             // Cavos Paymaster API key
+  paymasterUrl?: string;                // Custom paymaster endpoint URL
+  starknetRpcUrl?: string;              // Custom Starknet RPC URL
+  backendUrl?: string;                  // Default: 'https://cavos.xyz'
+  enableLogging?: boolean;              // Default: false
+  session?: SessionConfig;              // Session duration and default policy
+  oauthWallet?: Partial<OAuthWalletConfig>; // Advanced: custom class hash / registry
+}
+
+interface SessionConfig {
+  sessionDuration?: number;         // Seconds (default: 86400 = 24h)
+  renewalGracePeriod?: number;      // Seconds (default: 172800 = 48h)
+  defaultPolicy?: SessionKeyPolicy;
+}
+
+interface SessionKeyPolicy {
+  allowedContracts: string[];
+  spendingLimits: Array<{ token: string; limit: bigint }>;
+  maxCallsPerTx: number;
 }
 ```
 
+---
+
 ## Initialization
 
-### init()
+### `init()`
 
 ```typescript
 async init(): Promise<void>
 ```
 
-Initialize SDK and restore existing session.
+Initialize the SDK and restore any existing session from storage. Called automatically by `CavosProvider` — only use directly when not using React.
+
+```typescript
+const sdk = new CavosSDK({ appId: 'your-app-id', network: 'sepolia' });
+await sdk.init();
+```
+
+### `handlePopupCallback()` (static)
+
+```typescript
+static handlePopupCallback(): boolean
+```
+
+Detect and handle OAuth callback in the auth popup tab. Returns `true` if this window is a popup child (and will close itself). Called automatically by `CavosProvider`.
+
+---
 
 ## Authentication
 
-### login(provider, credentials?, redirectUri?)
+### `login(provider)`
 
 ```typescript
-async login(
-  provider: 'google' | 'apple' | 'firebase',
-  credentials?: { email: string; password: string },
-  redirectUri?: string
-): Promise<void>
+async login(provider: 'google' | 'apple'): Promise<void>
 ```
 
-Start authentication flow.
+Start OAuth authentication. Opens a new tab; resolves when the user completes OAuth and the popup closes.
 
-**For Google/Apple:**
 ```typescript
 await sdk.login('google');
 await sdk.login('apple');
 ```
 
-**For Firebase email/password:**
+### `sendMagicLink(email)`
+
 ```typescript
-await sdk.login('firebase', {
-  email: 'user@example.com',
-  password: 'password123'
+async sendMagicLink(email: string): Promise<void>
+```
+
+Send a passwordless magic link email. Returns immediately after the email is sent. Authentication completes in the background when the user clicks the link — subscribe via `onAuthChange()` to be notified.
+
+```typescript
+await sdk.sendMagicLink('user@example.com');
+// Listen for completion:
+sdk.onAuthChange(() => {
+  console.log('Auth complete:', sdk.getAddress());
 });
 ```
 
-**Throws:**
-- `EmailNotVerifiedError` - Firebase email not verified yet
-- `Error` - Invalid credentials or authentication failed
-
-### register(provider, credentials)
-
-```typescript
-async register(
-  provider: 'firebase',
-  credentials: { email: string; password: string }
-): Promise<void>
-```
-
-Register a new user with email/password via Firebase.
-
-```typescript
-await sdk.register('firebase', {
-  email: 'user@example.com',
-  password: 'secure123'
-});
-// User receives verification email
-```
-
-**Throws:**
-- `EmailVerificationRequiredError` - Registration successful, verification email sent
-- `Error` with `error: 'rate_limited'` - Too many requests, check `wait_seconds` property
-- `Error` - Email already registered or invalid input
-
-### isEmailVerified(email)
-
-```typescript
-async isEmailVerified(email: string): Promise<boolean>
-```
-
-Check if an email address has been verified.
-
-```typescript
-const verified = await sdk.isEmailVerified('user@example.com');
-if (!verified) {
-  showResendButton();
-}
-```
-
-### resendVerificationEmail(email)
-
-```typescript
-async resendVerificationEmail(email: string): Promise<void>
-```
-
-Resend verification email for unverified Firebase accounts.
-
-```typescript
-await sdk.resendVerificationEmail('user@example.com');
-// User receives new verification email
-```
-
-**Throws:**
-- `Error` with `error: 'rate_limited'` - Too many requests
-- `Error` with `error: 'already_verified'` - Email already verified
-- `Error` - Failed to send email
-
-**Rate Limits:**
-- Registration/resend: 60 seconds between emails per user
-
-### loginWithGoogle(redirectUri?)
-
-```typescript
-async loginWithGoogle(redirectUri?: string): Promise<void>
-```
-
-Helper method for Google OAuth login.
-
-### loginWithApple(redirectUri?)
-
-```typescript
-async loginWithApple(redirectUri?: string): Promise<void>
-```
-
-Helper method for Apple OAuth login.
-
-### handleCallback(authDataString)
+### `handleCallback(authDataString)`
 
 ```typescript
 async handleCallback(authDataString: string): Promise<void>
 ```
 
-Handle OAuth callback data (used internally by React provider).
+Process raw OAuth callback data. Used internally — you don't normally call this directly.
 
-### logout()
+### `logout()`
 
 ```typescript
 async logout(): Promise<void>
 ```
 
-Clear session and wallet data.
+Clear session and wallet state locally. The on-chain account is unaffected.
 
-### isAuthenticated()
+### `isAuthenticated()`
 
 ```typescript
 isAuthenticated(): boolean
 ```
 
-### getUserInfo()
+### `getUserInfo()`
 
 ```typescript
 getUserInfo(): UserInfo | null
 ```
 
-### deleteAccount()
+Returns `{ id, email, name, picture }` from the JWT claims, or `null` if not authenticated.
 
-```typescript
-async deleteAccount(): Promise<void>
-```
-
-Permanently delete user account.
+---
 
 ## Wallet
 
-### createWallet()
-
-```typescript
-async createWallet(): Promise<void>
-```
-
-Create or recover wallet (smart flow).
-
-### getAddress()
+### `getAddress()`
 
 ```typescript
 getAddress(): string | null
 ```
 
-### hasWallet()
-
-```typescript
-async hasWallet(): Promise<boolean>
-```
-
-Check if wallet exists on backend.
-
-### getBalance()
+### `getBalance()`
 
 ```typescript
 async getBalance(): Promise<string>
 ```
 
-Get ETH balance in wei.
+Returns the ETH balance of the wallet in wei as a string.
 
-### getFundingAddress()
-
-```typescript
-getFundingAddress(): string | null
-```
-
-### isAccountDeployed()
+### `isAccountDeployed()`
 
 ```typescript
 async isAccountDeployed(): Promise<boolean>
 ```
 
-### getWalletStatus()
-
-```typescript
-getWalletStatus(): WalletStatus
-```
-
-Get detailed wallet deployment and session state.
-
-```typescript
-const status = sdk.getWalletStatus();
-
-console.log('Deployed:', status.isDeployed);
-console.log('Session active:', status.isSessionActive);
-console.log('Ready:', status.isReady);
-```
-
-**WalletStatus interface:**
-
-```typescript
-interface WalletStatus {
-  isDeployed: boolean;      // Account contract deployed on-chain
-  isSessionActive: boolean; // Session key registered and not expired
-  isReady: boolean;         // Both deployed and session active
-}
-```
-
-### deployAccount()
+### `deployAccount()`
 
 ```typescript
 async deployAccount(): Promise<string>
 ```
 
-Manually deploy account. Returns transaction hash.
+Manually deploy the account contract. Returns the transaction hash. Normally called automatically by the SDK after login.
 
-### retryWalletUnlock()
-
-```typescript
-async retryWalletUnlock(): Promise<void>
-```
-
-Retry biometric unlock after cancellation.
-
-## Passkey-Only
-
-### hasPasskeyOnlyWallet()
+### `getWalletStatus()`
 
 ```typescript
-async hasPasskeyOnlyWallet(): Promise<boolean>
+getWalletStatus(): WalletStatus
 ```
-
-### loadPasskeyOnlyWallet()
 
 ```typescript
-async loadPasskeyOnlyWallet(): Promise<void>
+interface WalletStatus {
+  isDeploying: boolean;
+  isDeployed: boolean;
+  isRegistering: boolean;
+  isSessionActive: boolean;
+  isReady: boolean;
+  pendingDeployTxHash?: string;
+}
 ```
 
-### recoverWalletWithPasskey()
+### `onWalletStatusChange(listener)`
 
 ```typescript
-async recoverWalletWithPasskey(): Promise<void>
+onWalletStatusChange(listener: (status: WalletStatus) => void): () => void
 ```
 
-### clearPasskeyOnlyWallet()
+Subscribe to wallet status updates. Returns an unsubscribe function.
 
 ```typescript
-async clearPasskeyOnlyWallet(): Promise<void>
+const unsubscribe = sdk.onWalletStatusChange((status) => {
+  if (status.isReady) console.log('Wallet ready at:', sdk.getAddress());
+});
 ```
+
+### `onAuthChange(cb)`
+
+```typescript
+onAuthChange(cb: () => void): () => void
+```
+
+Subscribe to auth state changes, e.g. when a magic link verification completes in the background. Returns an unsubscribe function.
+
+### `getSessionPublicKey()`
+
+```typescript
+getSessionPublicKey(): string | null
+```
+
+Returns the public key of the current session key. Safe to display — does not expose the private key.
+
+### `getAssociatedWallets()`
+
+```typescript
+async getAssociatedWallets(): Promise<{ address: string; name?: string }[]>
+```
+
+Discover all wallets associated with the current user in this app.
+
+### `switchWallet(name?)`
+
+```typescript
+async switchWallet(name?: string): Promise<void>
+```
+
+Switch the active wallet by name. Omit `name` to switch back to the default wallet.
+
+### `getFundingAddress()`
+
+```typescript
+getFundingAddress(): string | null
+```
+
+Alias for `getAddress()`. Returns the address to send funds to.
+
+---
 
 ## Transactions
 
-### execute(calls, options?)
+### `execute(calls, options?)`
 
 ```typescript
 async execute(
@@ -303,129 +241,130 @@ async execute(
 ): Promise<string>
 ```
 
-Execute transaction(s). Returns transaction hash.
+Execute one or more transactions. Returns the transaction hash.
 
-### signMessage(message)
+- `gasless: true` (default) — Cavos Paymaster sponsors gas
+- `gasless: false` — wallet pays gas from its own STRK balance (requires session already registered)
+
+**Session state behavior:**
+
+| State | `gasless: true` | `gasless: false` |
+|-------|-----------------|------------------|
+| Not registered | JWT signature — registers + executes atomically | Throws |
+| Registered + active | Paymaster (SNIP-9) | Direct INVOKE, wallet pays |
+| Expired within grace | Auto-renews, then executes | Auto-renews, then executes |
+| Expired beyond grace | Throws `SESSION_EXPIRED` | Throws `SESSION_EXPIRED` |
+
+**Throws:**
+- `JwtExpiredError` — JWT has expired; user must re-login
+- `Error('SESSION_EXPIRED')` — session expired past grace period; user must re-login
+- `Error('non-sponsored transaction without a registered session')` — `gasless: false` before first tx
+
+### `signMessage(typedData)`
 
 ```typescript
-async signMessage(message: string | TypedData): Promise<Signature>
+async signMessage(typedData: TypedData): Promise<string[]>
 ```
+
+Sign SNIP-12 typed data with the session key. Returns `[SESSION_V1_magic, r, s, session_key]` — ready for on-chain `is_valid_signature`.
+
+---
 
 ## Session
 
-### hasActiveSession()
-
-```typescript
-hasActiveSession(): boolean
-```
-
-### createSession()
-
-```typescript
-async createSession(): Promise<void>
-```
-
-
-### registerCurrentSession()
+### `registerCurrentSession()`
 
 ```typescript
 async registerCurrentSession(): Promise<string>
 ```
 
-Register the current session key on-chain. Returns transaction hash.
+Explicitly register the current session key on-chain using the current JWT. Returns the transaction hash. Normally called automatically — only needed for advanced flows.
+
+> Call `updateSessionPolicy()` before this if the policy changed after login.
+
+### `updateSessionPolicy(policy)`
 
 ```typescript
-const txHash = await sdk.registerCurrentSession();
-console.log('Session registered:', txHash);
+updateSessionPolicy(policy: SessionKeyPolicy): void
 ```
 
-> [!IMPORTANT]
-> After this method completes, `walletStatus.isSessionActive` will be updated to `true`.
+Update the session policy that will be embedded on-chain at registration time. **Must** be called before `registerCurrentSession()` if the policy changed after login.
 
-### revokeSession(sessionKey?)
+### `renewSession()`
 
 ```typescript
-async revokeSession(sessionKey?: string): Promise<string>
+async renewSession(): Promise<string>
 ```
 
-Revoke a session key on-chain. If no `sessionKey` is provided, revokes the current session. Returns transaction hash.
+Renew an expired session key. The session must be registered on-chain and expired within the grace period (default 48h after expiry). Returns the transaction hash.
+
+**Throws:**
+- `Error('Session is still active (Xh Ym remaining)')` — not expired yet
+- `Error('Session expired outside the grace period')` — must re-login
+- `Error('Session not registered on-chain yet')` — execute a transaction first
+
+### `revokeSession(sessionKey)`
 
 ```typescript
-// Revoke current session
-await sdk.revokeSession();
-
-// Revoke specific session
-await sdk.revokeSession('0x123abc...');
+async revokeSession(sessionKey: string): Promise<string>
 ```
 
-> [!NOTE]
-> This operation uses JWT signature verification on-chain.
+Revoke a specific session key on-chain. Uses JWT verification. Pass `getSessionPublicKey()` to revoke the current session.
 
-### emergencyRevokeAllSessions()
+```typescript
+const pubKey = sdk.getSessionPublicKey();
+if (pubKey) await sdk.revokeSession(pubKey);
+```
+
+### `emergencyRevokeAllSessions()`
 
 ```typescript
 async emergencyRevokeAllSessions(): Promise<string>
 ```
 
-Revoke all active sessions for the wallet by incrementing the global revocation epoch. Returns transaction hash.
+Revoke **all** active sessions by incrementing the on-chain revocation epoch. Returns the transaction hash.
 
-```typescript
-await sdk.emergencyRevokeAllSessions();
-```
+> After this, the user must re-login to transact again.
 
-> [!WARNING]
-> This invalidates all sessions immediately. You'll need to create and register a new session to transact again.
-
-### exportSession()
+### `exportSession()`
 
 ```typescript
 exportSession(): string
 ```
 
-Export the current session as a base64-encoded token for use in CLI or other tools.
+Export the active session as a base64-encoded token for use with the Cavos CLI or autonomous agents. The token includes the session private key and wallet address.
 
 ```typescript
 const token = sdk.exportSession();
-console.log('Session token:', token);
-
-// Use in Cavos CLI
-// export CAVOS_TOKEN="<token>"
-// cavos balance
+// cavos session import <token>
 ```
 
-> [!NOTE]
-> Only export sessions when `walletStatus.isSessionActive` is `true`.
+**Throws** if no active session exists.
+
+---
 
 ## Onramp
 
-### getOnramp(provider)
+### `getOnramp(provider)`
 
 ```typescript
 getOnramp(provider: 'RAMP_NETWORK'): string
 ```
 
-Get fiat onramp URL.
+Get a fiat onramp URL for the connected wallet. Only available on mainnet.
+
+**Throws:**
+- `Error('Onramp feature is not available on Sepolia network.')`
+- `Error('No account connected.')`
+
+---
 
 ## Advanced
 
-### getAccount()
+### `getAccount()`
 
 ```typescript
 getAccount(): Account | null
 ```
 
-Get starknet.js Account instance.
-
-### getSessionAccount()
-
-```typescript
-getSessionAccount(): Account | null
-```
-
-### deleteWallet()
-
-```typescript
-async deleteWallet(): Promise<void>
-```
-
-Delete wallet from cloud storage.
+Returns `null` in OAuth mode. Use `execute()` instead of accessing the Account directly.

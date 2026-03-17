@@ -1,163 +1,236 @@
 ---
 title: "Wallet Management"
-description: "Create, load, and manage wallets"
+description: "Wallet lifecycle, multi-wallet accounts, status tracking, and session export"
 ---
 
 ## Wallet Lifecycle
 
-Wallets in Cavos go through these states:
+After `login()`, the SDK fully automates wallet setup in the background:
 
 ```
-Not Created -> Created (local) -> Deployed (on-chain)
+login() called
+  → Session key generated
+  → Wallet address derived (Poseidon(sub, salt))
+  → Account deployed on-chain (gasless, if not already deployed)
+  → Session key registered on-chain
+  → walletStatus.isReady = true ✅
 ```
 
-The SDK handles this automatically, but you can also control each step manually.
-
-## Automatic Wallet Creation
-
-When using OAuth login, wallets are created automatically:
+You never need to manually deploy or register — just observe `walletStatus`:
 
 ```tsx
-const { login, address } = useCavos();
+const { login, walletStatus, address } = useCavos();
 
-// After login completes, address is available
-await login('google');
-console.log(address); // '0x...'
+if (!address) {
+  return <button onClick={() => login('google')}>Login</button>;
+}
+
+if (!walletStatus.isReady) {
+  return (
+    <div>
+      {walletStatus.isDeploying && <p>Deploying wallet...</p>}
+      {walletStatus.isRegistering && <p>Activating session...</p>}
+    </div>
+  );
+}
+
+return <App />;
 ```
 
-## Manual Wallet Creation
+---
 
-For passkey-only wallets or explicit control:
+## Wallet Status
 
-```tsx
-const { createWallet, address } = useCavos();
-
-async function handleCreate() {
-  await createWallet();
-  console.log('Wallet created:', address);
+```typescript
+interface WalletStatus {
+  isDeploying: boolean;           // Account contract is being deployed on-chain
+  isDeployed: boolean;            // Account contract exists on-chain
+  isRegistering: boolean;         // Session key is being registered on-chain
+  isSessionActive: boolean;       // Session key is registered and not expired
+  isReady: boolean;               // Fully ready — deployed + session active
+  pendingDeployTxHash?: string;   // Set when deploy tx was submitted but confirmation timed out
 }
 ```
 
-### Smart Recovery Flow
+### Pending Deploy Recovery
 
-`createWallet()` implements a smart recovery flow:
-
-1. Check if user has existing passkey
-2. If yes, recover existing wallet
-3. If no, create new wallet
-4. Deploy wallet gaslessly
-
-This means users who clear their browser cache can recover their wallet just by calling `createWallet()` again.
-
-## Check Wallet Status
-
-### Has Wallet Locally
+If the deploy transaction times out (e.g., network congestion), the SDK persists the tx hash in localStorage. On the next `init()` call (page load), it re-polls the hash automatically. You can surface a link to the user in the meantime:
 
 ```tsx
-const { cavos } = useCavos();
+const { walletStatus } = useCavos();
 
-const hasLocal = await cavos.hasPasskeyOnlyWallet();
+{walletStatus.pendingDeployTxHash && (
+  <a
+    href={`https://sepolia.starkscan.co/tx/${walletStatus.pendingDeployTxHash}`}
+    target="_blank"
+  >
+    Deployment pending — view on explorer
+  </a>
+)}
 ```
 
-### Has Wallet on Backend
+---
 
-```tsx
-const { cavos } = useCavos();
+## Wallet Address
 
-const hasBackend = await cavos.hasWallet();
-```
-
-### Is Deployed On-Chain
-
-```tsx
-const { cavos } = useCavos();
-
-const isDeployed = await cavos.isAccountDeployed();
-```
-
-## Get Wallet Information
-
-### Address
+The wallet address is **deterministic** — derived from the user's OAuth identity and a per-app salt. The same user + same app always produces the same address.
 
 ```tsx
 const { address } = useCavos();
-// or
+
+// or directly from the SDK
 const address = cavos.getAddress();
 ```
 
-### Balance
+Use it as the funding address (send tokens to this address to fund the wallet):
 
 ```tsx
-const { cavos } = useCavos();
-
-const balance = await cavos.getBalance();
-console.log('ETH Balance:', balance);
+<p>Fund your wallet: {address}</p>
 ```
 
-### Funding Address
+---
 
-Get the address to send funds to (same as wallet address):
+## Check Deployment
 
 ```tsx
-const fundingAddress = cavos.getFundingAddress();
+const { isAccountDeployed } = useCavos();
+
+const deployed = await isAccountDeployed();
 ```
 
-## Wallet Recovery
-
-### Passkey-Only Recovery
-
-Users can recover their wallet on a new device if their passkey is synced:
+Or use `walletStatus.isDeployed` which is kept in sync automatically:
 
 ```tsx
-const { cavos } = useCavos();
+const { walletStatus } = useCavos();
 
-await cavos.recoverWalletWithPasskey();
+console.log('Deployed:', walletStatus.isDeployed);
 ```
 
-This:
-1. Prompts for passkey authentication
-2. Fetches encrypted wallet from backend
-3. Decrypts with passkey
-4. Restores wallet locally
+---
 
-### OAuth Recovery
+## Manual Deployment
 
-For OAuth users, recovery happens automatically when they log in with the same social account.
+In most cases deployment is automatic. If you ever need to trigger it manually:
 
-## Clear Wallet
+```tsx
+const { deployAccount } = useCavos();
 
-Clear the local wallet cache (does not delete on-chain or backend data):
+const txHash = await deployAccount();
+console.log('Deploy tx:', txHash);
+```
+
+---
+
+## Balance
+
+Get the ETH balance of the wallet (in wei, as a string):
+
+```tsx
+const { getBalance } = useCavos();
+
+const balance = await getBalance();
+const eth = (BigInt(balance) / 10n**18n).toString();
+```
+
+---
+
+## Multi-Wallet (Named Sub-Accounts)
+
+A single user can have multiple wallets per app, differentiated by name. Each named wallet has its own deterministic address derived from `Poseidon(sub, salt, walletName)`.
+
+### Discover Wallets
+
+Returns all wallets the user has used in this app:
+
+```tsx
+const { getAssociatedWallets } = useCavos();
+
+const wallets = await getAssociatedWallets();
+// [
+//   { address: '0x...', name: undefined },      // default wallet
+//   { address: '0x...', name: 'trading' },
+//   { address: '0x...', name: 'savings' },
+// ]
+```
+
+### Switch Wallet
+
+```tsx
+const { switchWallet, address } = useCavos();
+
+// Switch to a named sub-wallet
+await switchWallet('trading');
+console.log('Now using:', address); // new address
+
+// Switch back to default
+await switchWallet();
+```
+
+After switching, `walletStatus` resets and the deployment/session flow runs for the new wallet.
+
+---
+
+## Session Export
+
+Export the active session as a base64 token for use in the CLI or autonomous agents. The token encodes the session private key, wallet address, and policy — it does **not** include the JWT.
+
+```tsx
+const { exportSession, walletStatus, sessionPublicKey } = useCavos();
+
+// Only export when session is active and registered on-chain
+if (walletStatus.isSessionActive) {
+  const token = exportSession();
+  navigator.clipboard.writeText(token);
+}
+```
+
+**CLI Usage:**
+
+```bash
+export CAVOS_TOKEN="<base64_token>"
+
+cavos balance
+cavos transfer --to 0x... --amount 1.5 --token STRK --wait
+```
+
+> [!WARNING]
+> The exported token contains the session private key. Treat it like a password — never commit it to source control or share it publicly.
+
+---
+
+## Logout
+
+Clears the local session and wallet state. The on-chain account remains intact and can be restored by logging in with the same identity.
 
 ```tsx
 const { logout } = useCavos();
 
 await logout();
+// isAuthenticated → false, address → null
 ```
 
-## Delete Account
+---
 
-Permanently delete the wallet from Cavos servers:
+## Subscribing to Status Changes
 
-```tsx
-const { deleteAccount } = useCavos();
-
-await deleteAccount();
-```
-
-<Warning>
-This removes the encrypted private key from Cavos servers. The on-chain account still exists but becomes inaccessible.
-</Warning>
-
-## Direct SDK Access
-
-For advanced use cases, access the underlying SDK instance:
+For custom UI outside of React context, subscribe directly to the SDK:
 
 ```tsx
 const { cavos } = useCavos();
 
-// Get the starknet.js Account instance
-const account = cavos.getAccount();
+// Subscribe to wallet status
+const unsubscribe = cavos.onWalletStatusChange((status) => {
+  console.log('Wallet status changed:', status);
+});
 
-// Use with starknet.js directly
-const balance = await account.getBalance();
+// Subscribe to auth state changes (e.g., magic link completing)
+const unsubscribeAuth = cavos.onAuthChange(() => {
+  console.log('Auth state changed');
+});
+
+// Cleanup
+return () => {
+  unsubscribe();
+  unsubscribeAuth();
+};
 ```

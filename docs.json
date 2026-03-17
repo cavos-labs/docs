@@ -35,6 +35,7 @@
             "pages": [
               "web/installation",
               "web/authentication",
+              "web/modal",
               "web/wallet-management",
               "web/transactions",
               "web/react-hooks"

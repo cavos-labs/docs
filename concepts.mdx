@@ -28,7 +28,7 @@ flowchart TD
 
 ### Authentication Flow
 
-1. **User Authenticates**: Login with Google, Apple, or Firebase email/password
+1. **User Authenticates**: Login with Google, Apple, or Magic Link
 2. **JWT Issued**: Provider returns a signed JWT token with user identity
 3. **Session Key Generated**: SDK creates a temporary ECDSA keypair (Stark curve)
 4. **Nonce Computation**: `nonce = Poseidon(eph_pubkey_lo, eph_pubkey_hi, max_block, randomness)` — embedded in the JWT before the OAuth redirect
@@ -105,7 +105,7 @@ Session keys are temporary signing keys that expire after a configured duration:
 | **Renewal** | Generate new session key, verify with same JWT |
 
 > [!IMPORTANT]
-> Cavos wallets are **OAuth-based**, not private-key-based. Your identity (Google/Apple/Firebase account) IS your wallet. No seed phrases, no private keys to manage.
+> Cavos wallets are **OAuth-based**, not private-key-based. Your identity (Google/Apple account) IS your wallet. No seed phrases, no private keys to manage.
 
 ### Address Derivation
 
@@ -122,7 +122,7 @@ walletAddress = calculate_contract_address_from_hash(
 )
 ```
 
-- **sub**: OAuth user ID (e.g. Google's `sub` claim, Firebase UID)
+- **sub**: OAuth user ID (e.g. Google's `sub` claim, Apple's `sub` claim)
 - **salt**: Per-app salt derived from your App ID (isolates wallets between apps)
 - **cavosAccountClassHash**: `0x5426dc61fb0cbbe0a04ab63d926f321552ece71e2014c6a42faab493385e0a2`
 - **Same user + Same app = Same wallet address, every time**
@@ -136,19 +136,12 @@ walletAddress = calculate_contract_address_from_hash(
 - **Recovery**: Login again with same account
 - **Cross-device**: Same OAuth account = same wallet everywhere
 
-### Email/Password (Firebase)
+### Magic Link
 
-- **Identity**: Email (verified required)
-- **Verification**: Custom JWT signed by Cavos with RSA-2048
-- **Recovery**: Login with same email/password
-- **Security**: Email verification prevents unauthorized access
-
-### Passkey-Only
-
-- **Identity**: Anonymous (no email)
-- **Verification**: WebAuthn passkey
-- **Recovery**: Device-based (iCloud Keychain, Google Password Manager)
-- **Privacy**: No personal information collected
+- **Identity**: Email (passwordless)
+- **Verification**: Custom JWT signed via Cavos backend
+- **Recovery**: Send a new magic link to the same email
+- **UX**: No password to remember or manage
 
 ## Gasless Transactions
 
@@ -264,18 +257,12 @@ User → OAuth Login → JWT from Provider → Session Key Generated →
 Wallet Address Derived → Ready to Transact
 ```
 
-### Email/Password (Firebase)
+### Magic Link
 
 ```
-User → Register + Verify Email → Login → Custom JWT from Cavos →
-Session Key Generated → Wallet Address Derived → Ready to Transact
-```
-
-### Passkey-Only (Anonymous)
-
-```
-User → Passkey Registration → Anonymous Wallet Created →
-WebAuthn Signature → Ready to Transact
+User → Enter Email → Magic Link Sent → User Clicks Link →
+Custom JWT from Cavos → Session Key Generated →
+Wallet Address Derived → Ready to Transact
 ```
 
 ## Network Support

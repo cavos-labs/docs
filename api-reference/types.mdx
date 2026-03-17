@@ -1,100 +1,156 @@
 ---
 title: "Types"
-description: "TypeScript type definitions"
+description: "TypeScript type definitions for the Cavos React SDK"
 ---
 
 ## Configuration
 
-### CavosConfig
+### `CavosConfig`
 
 ```typescript
 interface CavosConfig {
-  appId: string;
-  network?: 'sepolia' | 'mainnet';
-  paymasterApiKey?: string;
-  starknetRpcUrl?: string;
-  enableLogging?: boolean;
-  passkeyModal?: PasskeyModalConfig;
+  appId: string;                        // Required: App ID from https://cavos.xyz/dashboard
+  network?: 'sepolia' | 'mainnet';      // Default: 'sepolia'
+  paymasterApiKey?: string;             // Cavos Paymaster API key
+  paymasterUrl?: string;                // Custom paymaster endpoint URL
+  starknetRpcUrl?: string;              // Custom Starknet RPC URL
+  backendUrl?: string;                  // Default: 'https://cavos.xyz'
+  enableLogging?: boolean;              // Default: false
+  session?: SessionConfig;
+  oauthWallet?: Partial<OAuthWalletConfig>;
 }
 ```
 
-### CavosNativeConfig
+### `SessionConfig`
 
 ```typescript
-interface CavosNativeConfig {
-  appId: string;
-  rpId: string;
-  network?: 'sepolia' | 'mainnet';
-  paymasterApiKey?: string;
-  starknetRpcUrl?: string;
+interface SessionConfig {
+  sessionDuration?: number;         // Seconds (default: 86400 = 24h)
+  renewalGracePeriod?: number;      // Seconds (default: 172800 = 48h)
+  defaultPolicy?: SessionKeyPolicy;
 }
 ```
 
-### PasskeyModalConfig
+### `OAuthWalletConfig`
+
+Advanced override for contract addresses. Not needed for most integrations — defaults are set per network.
 
 ```typescript
-interface PasskeyModalConfig {
-  title?: string;
-  description?: string;
-  buttonText?: string;
+interface OAuthWalletConfig {
+  jwksRegistryAddress: string;      // JWKS Registry contract address
+  cavosAccountClassHash: string;    // Account contract class hash
+  salt?: string;                    // Address derivation salt (default: '0x0')
 }
 ```
 
-## User
-
-### UserInfo
+### `CavosModalConfig`
 
 ```typescript
-interface UserInfo {
-  id: string;
-  email: string;
-  name?: string;
-  picture?: string;
+interface CavosModalConfig {
+  appName?: string;
+  appLogo?: string;
+  providers?: ('google' | 'apple' | 'email')[];
+  primaryColor?: string;
+  theme?: 'light' | 'dark';        // Default: 'light'
+  onSuccess?: (address: string) => void;
 }
 ```
 
-### LoginProvider
+---
+
+## Auth
+
+### `LoginProvider`
 
 ```typescript
 type LoginProvider = 'google' | 'apple';
 ```
 
-## Wallet
-
-### DecryptedWallet
+### `UserInfo`
 
 ```typescript
-interface DecryptedWallet {
-  address: string;
-  publicKey: string;
-  privateKey: string;
+interface UserInfo {
+  id: string;       // Composite: '{iss}:{sub}'
+  email: string;
+  name: string;
+  picture: string;
 }
 ```
 
+---
+
+## Session
+
+### `SessionKeyPolicy`
+
+```typescript
+interface SessionKeyPolicy {
+  allowedContracts: string[];   // Contract addresses the session key may call
+  spendingLimits: Array<{
+    token: string;              // ERC-20 contract address
+    limit: bigint;              // Max transferable amount in token base units (MUST be bigint)
+  }>;
+  maxCallsPerTx: number;        // Max calls per multicall transaction
+}
+```
+
+> [!CAUTION]
+> `limit` must be a `bigint`. Never use `number` — it silently overflows for token amounts with 18 decimals.
+> ```typescript
+> // ✅ Correct
+> limit: BigInt('10000000000000000000')  // 10 STRK
+> // ❌ Wrong — overflow
+> limit: 10 * 10**18
+> ```
+
+### `WalletStatus`
+
+```typescript
+interface WalletStatus {
+  isDeploying: boolean;           // Account contract is currently being deployed
+  isDeployed: boolean;            // Account contract exists on-chain
+  isRegistering: boolean;         // Session key is currently being registered on-chain
+  isSessionActive: boolean;       // Session key is registered and not expired
+  isReady: boolean;               // Fully set up — deployed + session active
+  pendingDeployTxHash?: string;   // Deploy tx hash when confirmation timed out
+}
+```
+
+---
+
 ## Transactions
 
-### Call
+### `Call`
 
 From starknet.js:
 
 ```typescript
 interface Call {
-  contractAddress: string;
-  entrypoint: string;
-  calldata?: string[];
+  contractAddress: string;  // Contract to call
+  entrypoint: string;       // Function name
+  calldata?: string[];      // Function arguments (as hex strings or decimal strings)
 }
 ```
 
-## Signing
+uint256 values (balances, amounts) are always split into two felts: `[low, high]`.
 
-### TypedData
+```typescript
+// Transfer 1 STRK (1 × 10^18)
+const calldata = [
+  recipientAddress,
+  '1000000000000000000', // low  (fits in felt252)
+  '0',                    // high
+];
+```
 
-EIP-712 style typed data for signing:
+### `TypedData`
+
+SNIP-12 typed data for `signMessage()`:
 
 ```typescript
 interface TypedData {
   types: {
-    StarkNetDomain?: TypeElement[];
+    StarknetDomain?: TypeElement[];
     [key: string]: TypeElement[] | undefined;
   };
   primaryType: string;
@@ -108,61 +164,95 @@ interface TypeElement {
 }
 ```
 
-### Signature
+---
+
+## Errors
+
+### `JwtExpiredError`
+
+Thrown by `execute()` when the OAuth JWT has expired and the session is not yet registered on-chain. The user must re-login.
 
 ```typescript
-interface Signature {
-  r: string;
-  s: string;
+class JwtExpiredError extends Error {
+  readonly code = 'JWT_EXPIRED';
 }
 ```
 
-## Onramp
-
-### OnrampProvider
-
 ```typescript
-type OnrampProvider = 'RAMP_NETWORK';
+import { JwtExpiredError } from '@cavos/react';
+
+try {
+  await execute(calls);
+} catch (err) {
+  if (err instanceof JwtExpiredError) {
+    await login('google');
+  }
+}
 ```
+
+---
 
 ## Context
 
-### CavosContextValue
+### `CavosContextValue`
+
+The full type returned by `useCavos()`:
 
 ```typescript
 interface CavosContextValue {
+  // --- SDK instance ---
   cavos: CavosSDK;
+
+  // --- State ---
   isAuthenticated: boolean;
   user: UserInfo | null;
   address: string | null;
   hasActiveSession: boolean;
-  requiresWalletCreation: boolean;
   isLoading: boolean;
-  login: (provider: LoginProvider, redirectUri?: string) => Promise<void>;
-  createWallet: () => Promise<void>;
+  walletStatus: WalletStatus;
+  sessionPublicKey: string | null;
+
+  // --- Auth ---
+  login: (provider: LoginProvider) => Promise<void>;
+  sendMagicLink: (email: string) => Promise<void>;
+  logout: () => Promise<void>;
+
+  // --- Transactions ---
   execute: (calls: Call | Call[], options?: { gasless?: boolean }) => Promise<string>;
-  signMessage: (message: string | TypedData) => Promise<Signature>;
-  deleteAccount: () => Promise<void>;
-  retryWalletUnlock: () => Promise<void>;
+  signMessage: (typedData: TypedData) => Promise<string[]>;
+
+  // --- Session ---
+  registerCurrentSession: () => Promise<string>;
+  updateSessionPolicy: (policy: SessionKeyPolicy) => void;
+  renewSession: () => Promise<string>;
+  revokeSession: (sessionKey: string) => Promise<string>;
+  emergencyRevokeAllSessions: () => Promise<string>;
+  exportSession: () => string;
+
+  // --- Account ---
+  isAccountDeployed: () => Promise<boolean>;
+  deployAccount: () => Promise<string>;
+  getBalance: () => Promise<string>;
+  getAssociatedWallets: () => Promise<{ address: string; name?: string }[]>;
+  switchWallet: (name?: string) => Promise<void>;
+
+  // --- Modal ---
+  openModal: () => void;
+  closeModal: () => void;
+
+  // --- Utilities ---
   getOnramp: (provider: OnrampProvider) => string;
-  logout: () => Promise<void>;
+  resendVerificationEmail: (email: string) => Promise<void>;
 }
 ```
 
-### CavosNativeContextValue
+---
 
-```typescript
-interface CavosNativeContextValue {
-  cavos: CavosNativeSDK;
-  isAuthenticated: boolean;
-  user: UserInfo | null;
-  address: string | null;
-  isLoading: boolean;
-  createWallet: () => Promise<void>;
-  loadWallet: () => Promise<void>;
-  recoverWallet: () => Promise<void>;
-  execute: (calls: Call | Call[], options?: { gasless?: boolean }) => Promise<string>;
-  logout: () => Promise<void>;
-  setAuthData: (authData: { access_token: string; user: UserInfo }) => Promise<void>;
-}
-```
+## Token Addresses (Starknet)
+
+| Token | Address (Mainnet + Sepolia) |
+|-------|----------------------------|
+| ETH | `0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7` |
+| STRK | `0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d` |
+| USDC | `0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8` (mainnet only) |
+| USDT | `0x068f5c6a61780768455de69077e07e89787839bf8166decfbf92b645209c0fb8` (mainnet only) |

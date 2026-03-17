@@ -79,13 +79,45 @@ The SDK provides methods to manage your active on-chain sessions.
 
 ### Session Renewal
 
-Sessions have a limited duration (default 24h). Before they expire (or during the grace period), you can renew them:
+Sessions expire after 24h by default. Within the 48h grace period after expiry, you can renew without a new OAuth login — the old session key signs the renewal request for the new key.
 
 ```typescript
-const txHash = await cavos.renewSession();
+const { renewSession } = useCavos();
+
+try {
+  const txHash = await renewSession();
+  console.log('Session renewed:', txHash);
+} catch (err) {
+  if (err.message.includes('still active')) {
+    // Not expired yet — no action needed
+  } else if (err.message.includes('outside the grace period')) {
+    // Beyond 48h grace — must re-login
+    await login('google');
+  }
+}
 ```
 
-This generates a **new session key pair** and registers it on-chain using the old session's authorization (while it's still in the grace period).
+The SDK also handles renewal **automatically** inside `execute()`: if the session is expired but within the grace period, it renews before executing the transaction.
+
+### Explicit Registration
+
+The session key is normally registered on-chain automatically during the first transaction. If you need to register it before any transaction (e.g., to pre-activate a policy), call:
+
+```typescript
+const { updateSessionPolicy, registerCurrentSession } = useCavos();
+
+// Always update policy before registering
+updateSessionPolicy({
+  allowedContracts: [TOKEN_ADDRESS],
+  spendingLimits: [{ token: TOKEN_ADDRESS, limit: BigInt(10 * 10**18) }],
+  maxCallsPerTx: 5,
+});
+
+const txHash = await registerCurrentSession();
+```
+
+> [!WARNING]
+> If you change the policy after login but before registration, you **must** call `updateSessionPolicy()` first — otherwise the stale policy from login time gets registered on-chain.
 
 ## Session Policies
 
@@ -147,16 +179,18 @@ flowchart LR
 If you suspect a session key has been compromised, or simply want to logout securely from a shared device, you have two options:
 
 ### 1. Revoke Specific Session
-Invalidates a single session key on-chain.
+Invalidates a single session key on-chain. The `sessionKey` argument is required — pass `sessionPublicKey` from `useCavos()` to revoke the current one.
 
 ```typescript
-const { revokeSession } = useCavos();
+const { revokeSession, sessionPublicKey } = useCavos();
 
-// Revoke current session
-await revokeSession();
+// Revoke the current session key
+if (sessionPublicKey) {
+  await revokeSession(sessionPublicKey);
+}
 
-// Or revoke a specific session key
-await revokeSession('0x123...'); 
+// Or revoke any specific session key by its public key
+await revokeSession('0x123...');
 ```
 
 ### 2. Emergency Revoke All

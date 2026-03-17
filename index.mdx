@@ -26,7 +26,7 @@ Cavos provides verifiable, MPC-free OAuth wallet infrastructure for Starknet app
 
 Cavos creates **self-custodial wallets** tied to your OAuth identity:
 
-1. **User authenticates** with Google, Apple, Firebase email/password, or Passkey
+1. **User authenticates** with Google, Apple, or Magic Link
 2. **Provider issues JWT** token with user identity (sub claim)
 3. **Wallet address derived** deterministically: `addressSeed = Poseidon(sub, salt)` → contract address
 4. **Ephemeral session key generated** for transaction signing (~24 hour lifetime)
@@ -35,13 +35,13 @@ Cavos creates **self-custodial wallets** tied to your OAuth identity:
 7. **All transactions** signed automatically with session key — no prompts needed
 
 > [!NOTE]
-> Your wallet address is computed from your OAuth identity. There are no private keys to manage - your Google/Apple/Firebase account IS your wallet.
+> Your wallet address is computed from your OAuth identity. There are no private keys to manage — your Google or Apple account IS your wallet.
 
 ## Choose Your Platform
 
 <Columns cols={2}>
   <Card title="Web SDK" icon="browser" href="/web/installation">
-    For React web applications. Uses WebAuthn for passkey authentication.
+    For React web applications. Google, Apple, and Magic Link authentication.
   </Card>
   <Card title="React Native SDK" icon="mobile" href="/react-native/installation">
     For iOS and Android apps. Uses native passkeys with platform authenticators.
@@ -54,8 +54,7 @@ Cavos supports multiple ways to authenticate:
 
 - **Google OAuth**: Login with Google account
 - **Apple OAuth**: Login with Apple ID
-- **Email/Password**: Traditional auth with Firebase (email verification required)
-- **Passkey-Only**: Anonymous wallets for privacy-focused apps
+- **Magic Link**: Passwordless email login
 
 ## Quick Example
 
@@ -82,37 +81,16 @@ function App() {
 }
 
 function WalletDemo() {
-  const { login, register, address, execute, isAuthenticated } = useCavos();
-
-  // Social Login
-  const handleSocialLogin = async () => {
-    await login('google');  // or 'apple'
-    // Wallet is ready! Ephemeral key generated automatically
-  };
-
-  // Email/Password Registration
-  const handleRegister = async () => {
-    await register('firebase', {
-      email: 'user@example.com',
-      password: 'secure123'
-    });
-    // User receives verification email
-  };
-
-  // Email/Password Login
-  const handleEmailLogin = async () => {
-    await login('firebase', {
-      email: 'user@example.com',
-      password: 'secure123'
-    });
-    // Must verify email before login succeeds
-  };
+  const { login, sendMagicLink, address, execute, isAuthenticated } = useCavos();
 
   if (!isAuthenticated || !address) {
     return (
       <div>
-        <button onClick={handleSocialLogin}>Login with Google</button>
-        <button onClick={handleRegister}>Register with Email</button>
+        <button onClick={() => login('google')}>Login with Google</button>
+        <button onClick={() => login('apple')}>Login with Apple</button>
+        <button onClick={() => sendMagicLink('user@example.com')}>
+          Send Magic Link
+        </button>
       </div>
     );
   }

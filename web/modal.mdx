@@ -1,0 +1,316 @@
+---
+title: "Auth Modal"
+description: "Built-in authentication modal with Google, Apple, and Magic Link"
+---
+
+## Overview
+
+Cavos ships a pre-built authentication modal that handles the full login flow — provider selection, magic link email input, inbox confirmation screen, and wallet setup progress. You don't need to build any auth UI yourself.
+
+The modal is fully self-contained: it calls `login()`, `sendMagicLink()`, and subscribes to `walletStatus` internally. It closes automatically once `walletStatus.isReady` is `true`.
+
+---
+
+## Setup
+
+Pass the `modal` prop to `CavosProvider`. If the prop is omitted entirely, the modal is not mounted.
+
+```tsx
+// app/providers.tsx
+'use client';
+
+import { CavosProvider } from '@cavos/react';
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <CavosProvider
+      config={{
+        appId: process.env.NEXT_PUBLIC_CAVOS_APP_ID || '',
+        network: 'sepolia',
+      }}
+      modal={{
+        appName: 'My App',
+        theme: 'dark',
+        providers: ['google', 'apple', 'email'],
+        primaryColor: '#6366f1',
+        onSuccess: (address) => {
+          console.log('Wallet ready:', address);
+        },
+      }}
+    >
+      {children}
+    </CavosProvider>
+  );
+}
+```
+
+### Modal Config Options
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `appName` | `string` | — | App name shown in the modal header: *"Sign in to {appName}"*. If omitted, shows *"Log in or sign up"*. |
+| `appLogo` | `string` | — | Reserved for future use. |
+| `providers` | `('google' \| 'apple' \| 'email')[]` | `['google', 'apple', 'email']` | Which auth methods to show. Omit any to hide it. |
+| `primaryColor` | `string` | `'#0A0908'` | Button color for the magic link submit action. |
+| `theme` | `'light' \| 'dark'` | `'light'` | Color scheme. |
+| `onSuccess` | `(address: string) => void` | — | Called ~1.6s after the wallet is fully ready (`walletStatus.isReady`). |
+
+---
+
+## Opening and Closing
+
+Use `openModal()` and `closeModal()` from `useCavos()`:
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function ConnectButton() {
+  const { openModal, isAuthenticated, address, logout } = useCavos();
+
+  if (isAuthenticated) {
+    return (
+      <div>
+        <span>{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+        <button onClick={logout}>Disconnect</button>
+      </div>
+    );
+  }
+
+  return <button onClick={openModal}>Connect Wallet</button>;
+}
+```
+
+### `useCavosAuth` Convenience Hook
+
+A minimal hook that exposes only what you need for a connect button:
+
+```tsx
+import { useCavosAuth } from '@cavos/react';
+
+function NavBar() {
+  const { openModal, isAuthenticated, address, user, walletStatus, logout } = useCavosAuth();
+
+  return (
+    <nav>
+      {isAuthenticated ? (
+        <button onClick={logout}>
+          {user?.name ?? address?.slice(0, 8)}
+        </button>
+      ) : (
+        <button onClick={openModal}>Connect</button>
+      )}
+    </nav>
+  );
+}
+```
+
+`useCavosAuth` returns:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `openModal` | `() => void` | Open the auth modal |
+| `closeModal` | `() => void` | Close the auth modal |
+| `isAuthenticated` | `boolean` | User has an active session |
+| `address` | `string \| null` | Wallet address |
+| `user` | `UserInfo \| null` | `{ id, email, name, picture }` |
+| `walletStatus` | `WalletStatus` | Deployment and session state |
+| `logout` | `() => Promise<void>` | Clear session |
+
+---
+
+## Modal Screens
+
+The modal manages four internal screens automatically — you don't control which screen is shown.
+
+### 1. Provider Selection (`select`)
+
+The default screen. Shows whichever providers you configured.
+
+- **Email field** (if `'email'` is in `providers`): typing an email and pressing Enter or clicking Submit advances to the magic-link screen
+- **Google button**: calls `login('google')`, opens OAuth tab
+- **Apple button**: calls `login('apple')`, opens OAuth tab
+
+### 2. Magic Link Email (`magic-link`)
+
+Shown when the user clicks Submit on the email field. Accepts the email address and calls `sendMagicLink(email)` on submit.
+
+### 3. Check Your Inbox (`verify`)
+
+Shown after the magic link is sent. Displays the destination email and a **Resend link** button with a 60-second cooldown. The user can also tap **Use a different email** to go back.
+
+Authentication completes in the background — when the user clicks the magic link in their email, the modal automatically transitions to the deploying screen.
+
+### 4. Wallet Setup (`deploying`)
+
+Shown as soon as the user authenticates (OAuth or magic link). Displays a spinner while the SDK deploys the account and registers the session key. When `walletStatus.isReady` is `true`, the spinner becomes a checkmark and the modal closes after ~1.6s, firing `onSuccess`.
+
+> [!IMPORTANT]
+> The modal **cannot be dismissed** during the `deploying` screen. Clicking outside or pressing the close button has no effect. This prevents the user from navigating away before their wallet is ready.
+
+---
+
+## Filtering Providers
+
+Show only the methods your app supports:
+
+```tsx
+// Google + Apple only (no email)
+modal={{ appName: 'My App', providers: ['google', 'apple'] }}
+
+// Magic link only
+modal={{ appName: 'My App', providers: ['email'] }}
+
+// Google only
+modal={{ appName: 'My App', providers: ['google'] }}
+```
+
+---
+
+## Using the Modal Component Directly
+
+If you need more control — for example, to embed the modal inside a specific layout or manage the `open` state yourself — you can import `CavosAuthModal` directly instead of using the `modal` prop on `CavosProvider`:
+
+```tsx
+import { CavosAuthModal } from '@cavos/react';
+import { useState } from 'react';
+
+function App() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Connect</button>
+
+      <CavosAuthModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onSuccess={(address) => {
+          console.log('Ready:', address);
+          setOpen(false);
+        }}
+        appName="My App"
+        theme="dark"
+        providers={['google', 'apple', 'email']}
+        primaryColor="#6366f1"
+      />
+    </>
+  );
+}
+```
+
+> [!NOTE]
+> `CavosAuthModal` must be rendered inside a `<CavosProvider>` — it uses `useCavos()` internally.
+
+### `CavosAuthModalProps`
+
+```typescript
+interface CavosAuthModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSuccess?: (address: string) => void;
+  appName?: string;
+  providers?: ('google' | 'apple' | 'email')[];
+  primaryColor?: string;
+  theme?: 'light' | 'dark';
+}
+```
+
+---
+
+## Responding to Wallet Ready
+
+`onSuccess` is the recommended way to react when the wallet is fully set up. For more granular control, observe `walletStatus` directly:
+
+```tsx
+import { useCavos } from '@cavos/react';
+import { useEffect } from 'react';
+
+function App() {
+  const { walletStatus, address, openModal } = useCavos();
+
+  // Fire once when wallet becomes ready
+  useEffect(() => {
+    if (walletStatus.isReady && address) {
+      console.log('Wallet ready, redirect to dashboard');
+    }
+  }, [walletStatus.isReady, address]);
+
+  return <button onClick={openModal}>Connect</button>;
+}
+```
+
+---
+
+## Theming
+
+```tsx
+// Light (default)
+modal={{ theme: 'light', primaryColor: '#6366f1' }}
+
+// Dark
+modal={{ theme: 'dark', primaryColor: '#818cf8' }}
+```
+
+The `primaryColor` controls the magic link submit button. The rest of the modal adapts automatically to the `theme`.
+
+---
+
+## Mobile Behavior
+
+On screens ≤ 640px the modal renders as a **bottom sheet** (slides up from the bottom) instead of a centered dialog. All functionality is identical — only the animation and positioning change.
+
+---
+
+## Complete Example
+
+```tsx
+// app/providers.tsx
+'use client';
+import { CavosProvider, SessionKeyPolicy } from '@cavos/react';
+
+const POLICY: SessionKeyPolicy = {
+  allowedContracts: ['0x04718f5a0Fc34cC1AF16A1cdee98fFB20C31f5cD61D6Ab07201858f4287c938D'],
+  spendingLimits: [{ token: '0x04718f5a0Fc34cC1AF16A1cdee98fFB20C31f5cD61D6Ab07201858f4287c938D', limit: BigInt('10000000000000000000') }],
+  maxCallsPerTx: 5,
+};
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <CavosProvider
+      config={{
+        appId: process.env.NEXT_PUBLIC_CAVOS_APP_ID || '',
+        network: 'sepolia',
+        session: { defaultPolicy: POLICY },
+      }}
+      modal={{
+        appName: 'My App',
+        theme: 'dark',
+        providers: ['google', 'apple', 'email'],
+        onSuccess: (address) => console.log('Wallet ready:', address),
+      }}
+    >
+      {children}
+    </CavosProvider>
+  );
+}
+```
+
+```tsx
+// app/components/ConnectButton.tsx
+'use client';
+import { useCavosAuth } from '@cavos/react';
+
+export function ConnectButton() {
+  const { openModal, isAuthenticated, address, logout } = useCavosAuth();
+
+  if (isAuthenticated && address) {
+    return (
+      <button onClick={logout}>
+        {address.slice(0, 6)}...{address.slice(-4)}
+      </button>
+    );
+  }
+
+  return <button onClick={openModal}>Connect Wallet</button>;
+}
+```

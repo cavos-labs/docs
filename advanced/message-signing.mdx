@@ -1,28 +1,29 @@
 ---
 title: "Message Signing"
-description: "Sign typed data and messages with your wallet"
+description: "Sign typed data with your session key (SNIP-12)"
 ---
 
 ## Overview
 
-Cavos supports signing typed data (SNIP-12) using your session key. This is useful for authentication, proof of ownership, or off-chain signatures (like order signing).
+Cavos supports signing typed data in [SNIP-12](https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-12.md) format using the session key. This is useful for authentication challenges, off-chain order signing, and proof of ownership without spending gas.
+
+---
 
 ## Signing Typed Data
-
-To sign a message, prepare it in the [SNIP-12](https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-12.md) format and call `signMessage()`.
 
 ```tsx
 import { useCavos } from '@cavos/react';
 
 function SignDemo() {
-  const { signMessage } = useCavos();
+  const { signMessage, walletStatus } = useCavos();
 
   const handleSign = async () => {
     const typedData = {
       types: {
-        StarkNetDomain: [
+        StarknetDomain: [
           { name: 'name', type: 'shortstring' },
           { name: 'version', type: 'shortstring' },
+          { name: 'chainId', type: 'shortstring' },
         ],
         Message: [
           { name: 'content', type: 'felt' },
@@ -30,49 +31,153 @@ function SignDemo() {
       },
       primaryType: 'Message',
       domain: {
-        name: 'MyAwesomeDApp',
+        name: 'MyApp',
         version: '1',
+        chainId: '0x534e5f5345504f4c4941', // SN_SEPOLIA
       },
       message: {
-        content: '0x48656c6c6f20576f726c64', // "Hello World" in hex
+        content: '0x48656c6c6f', // arbitrary felt value
       },
     };
 
-    try {
-      const signature = await signMessage(typedData);
-      console.log('Signature:', signature.r, signature.s);
-    } catch (error) {
-      console.error('Signing failed:', error);
-    }
+    const signature = await signMessage(typedData);
+    console.log('Signature:', signature);
+    // ['0x<SESSION_V1_magic>', '0x<r>', '0x<s>', '0x<session_pubkey>']
   };
 
-  return <button onClick={handleSign}>Sign Message</button>;
+  return (
+    <button onClick={handleSign} disabled={!walletStatus.isReady}>
+      Sign Message
+    </button>
+  );
 }
 ```
 
-## Verifying Signatures
+---
 
-Since Cavos uses a session key for signing, verification must happen against the registered session key on-chain.
+## Return Format
 
-1.  **On-Chain**: Use the account contract's `is_valid_signature` method (SRC-6).
-2.  **Off-Chain**: Fetch the current session key for the user from the contract via `get_session(session_key)` and then verify the ECDSA signature against it.
-
-## Signature Format
-
-The `signMessage` method returns a standard STARK curve signature:
+`signMessage()` returns a `string[]` array, not an object:
 
 ```typescript
-interface Signature {
-  r: string; // Hex string
-  s: string; // Hex string
-}
+const signature: string[] = await signMessage(typedData);
+// [SESSION_V1_magic, r, s, session_key]
 ```
+
+This format is directly compatible with the account contract's `is_valid_signature` entrypoint — pass it as-is.
+
+> [!IMPORTANT]
+> The signature is **not** a plain ECDSA `{ r, s }` pair. It is a `SESSION_V1` formatted array that includes the session key reference, required for on-chain verification.
+
+---
+
+## Verifying On-Chain
+
+The signed message can be verified on-chain using the SRC-5 `is_valid_signature` entrypoint on the wallet contract:
+
+```typescript
+import { RpcProvider, hash } from 'starknet';
+
+const provider = new RpcProvider({ nodeUrl: 'https://...' });
+
+// Compute the message hash the same way the contract does
+const msgHash = hash.computeHashOnElements([
+  hash.getSelectorFromName('StarknetDomain'),
+  // ... domain fields
+]);
+
+const result = await provider.callContract({
+  contractAddress: walletAddress,
+  entrypoint: 'is_valid_signature',
+  calldata: [
+    msgHash,
+    signature.length.toString(),
+    ...signature,
+  ],
+});
+
+// Returns 'VALID' (as a felt: 0x56414c4944) if signature is valid
+const isValid = result[0] === '0x56414c4944';
+```
+
+---
+
+## Verifying Off-Chain
+
+To verify without a contract call, fetch the current session key from the account and verify the ECDSA component directly:
+
+```typescript
+import { ec, hash } from 'starknet';
+
+// The session public key is at index 3 of the signature array
+const sessionPubKey = signature[3];
+const r = signature[1];
+const s = signature[2];
+
+// Recompute the message hash
+const msgHash = '0x...'; // same as above
+
+const valid = ec.starkCurve.verify(
+  { r: BigInt(r), s: BigInt(s) },
+  msgHash,
+  sessionPubKey,
+);
+```
+
+> Off-chain verification does not confirm that the session key is currently valid on-chain (e.g., not revoked or expired). Use on-chain verification for security-critical checks.
+
+---
 
 ## Use Cases
 
-### Authentication
-Instead of a password, users can sign a unique challenge (nonce) to prove they control the wallet associated with their OAuth identity.
+### Authentication Challenge
 
-### Order Signing
-DEXs and NFT marketplaces use off-chain signatures to allow users to list assets or place orders without paying gas, only executing on-chain when a match is found.
+Prove wallet ownership without a transaction:
 
+```typescript
+// Backend generates a challenge
+const challenge = crypto.randomUUID();
+
+// User signs it
+const signature = await signMessage({
+  types: {
+    StarknetDomain: [
+      { name: 'name', type: 'shortstring' },
+      { name: 'version', type: 'shortstring' },
+      { name: 'chainId', type: 'shortstring' },
+    ],
+    Auth: [{ name: 'challenge', type: 'felt' }],
+  },
+  primaryType: 'Auth',
+  domain: { name: 'MyApp', version: '1', chainId: '0x534e5f5345504f4c4941' },
+  message: { challenge: `0x${Buffer.from(challenge).toString('hex')}` },
+});
+
+// Backend verifies via is_valid_signature
+```
+
+### Off-Chain Order Signing
+
+DEXs and NFT marketplaces use off-chain signatures to allow users to place orders or list assets without paying gas:
+
+```typescript
+const orderSignature = await signMessage({
+  types: {
+    StarknetDomain: [...],
+    Order: [
+      { name: 'token_in', type: 'felt' },
+      { name: 'token_out', type: 'felt' },
+      { name: 'amount', type: 'u256' },
+      { name: 'price', type: 'u256' },
+    ],
+  },
+  primaryType: 'Order',
+  domain: { name: 'MyDEX', version: '1', chainId: '...' },
+  message: {
+    token_in: TOKEN_A,
+    token_out: TOKEN_B,
+    amount: { low: amountLow, high: '0' },
+    price: { low: priceLow, high: '0' },
+  },
+});
+```

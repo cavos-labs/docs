@@ -1,173 +1,169 @@
 ---
 title: "Error Handling"
-description: "Common errors and troubleshooting"
+description: "Error classes, common errors, and recovery patterns"
 ---
 
-## Error Categories
+## Error Classes
 
-| Category | Examples |
-|----------|----------|
-| Authentication | OAuth failed, invalid credentials, email not verified |
-| Session | Session expired, no session found, nonce mismatch |
-| Wallet | Account not deployed, insufficient funds |
-| Transaction | Execution failed, paymaster error |
-| Network | RPC errors, timeout |
-| Limits | MAU exceeded |
+### `JwtExpiredError`
 
-## Authentication Errors
+Thrown by `execute()` when the OAuth JWT has expired and the session is not yet registered on-chain. The user must re-authenticate.
 
-### Email Not Verified (Firebase)
+```typescript
+import { JwtExpiredError } from '@cavos/react';
 
-When a user tries to login before verifying their email:
-
-```tsx
-import { useCavos } from '@cavos/react';
-
-try {
-  await login('firebase', { email, password });
-} catch (error) {
-  if (error.name === 'EmailNotVerifiedError') {
-    console.log('Unverified email:', error.email);
-    showResendVerificationButton(error.email);
-  }
-}
-```
-
-### Invalid Credentials (Firebase)
-
-```tsx
-try {
-  await login('firebase', { email, password });
-} catch (error) {
-  if (error.message?.includes('auth/wrong-password')) {
-    showMessage('Invalid email or password');
-  } else if (error.message?.includes('auth/user-not-found')) {
-    showMessage('No account found with this email');
-  } else if (error.message?.includes('auth/invalid-email')) {
-    showMessage('Please enter a valid email address');
-  }
-}
-```
-
-### Email Already Registered
-
-```tsx
-try {
-  await register('firebase', { email, password });
-} catch (error) {
-  if (error.error === 'Email already registered and verified') {
-    showMessage('This email is already registered. Please login.');
-  }
-}
-```
-
-### OAuth Failed (Google/Apple)
-
-```tsx
-try {
-  await login('google');
-} catch (error) {
-  if (error.message.includes('popup')) {
-    showMessage('Please allow popups for authentication');
-  } else if (error.message.includes('cancelled')) {
-    showMessage('Login cancelled');
-  } else if (error.message.includes('nonce')) {
-    // Nonce mismatch - session state corrupted
-    showMessage('Authentication error. Please try again.');
-  }
-}
-```
-
-## Session Errors
-
-### No Session Found
-
-When trying to execute transactions without a valid session:
-
-```tsx
 try {
   await execute(calls);
-} catch (error) {
-  if (error.message.includes('No session') || 
-      error.message.includes('not initialized')) {
-    // Re-authenticate
+} catch (err) {
+  if (err instanceof JwtExpiredError) {
+    // Prompt re-login
     await login('google');
   }
 }
 ```
 
-### Session Expired
+> JWTs from Google/Apple typically expire after 1 hour. Once the session key is registered on-chain (first transaction), subsequent transactions use the session key directly — no JWT needed until the session itself expires.
 
-Session has exceeded its `maxBlock`:
+---
+
+## Authentication Errors
+
+### OAuth Login Cancelled or Blocked
 
 ```tsx
 try {
-  await execute(calls);
+  await login('google');
 } catch (error) {
-  if (error.message.includes('Session expired') ||
-      error.message.includes('expired')) {
-    // Renew the session with fresh JWT
-    await renewSession();
-    // Retry the operation
-    await execute(calls);
+  if (error.message.includes('closed without completing')) {
+    showMessage('Login window was closed. Please try again.');
+  } else if (error.message.includes('timed out')) {
+    showMessage('Login timed out. Please try again.');
   }
 }
 ```
 
-### JWT Nonce Mismatch
+### Nonce Mismatch
 
-Happens if session state was corrupted or replayed:
+Happens if session state was corrupted between the OAuth redirect and the callback:
 
 ```tsx
 try {
-  await handleCallback(authData);
+  await login('google');
 } catch (error) {
   if (error.message.includes('nonce')) {
-    // Clear corrupted state and retry
+    // Clear any stale state and retry
     sessionStorage.clear();
     await login('google');
   }
 }
 ```
 
-## Email Verification Errors
+---
 
-### Rate Limited
+## Session Errors
 
-```tsx
-try {
-  await cavos.resendVerificationEmail(email);
-} catch (error) {
-  if (error.error === 'rate_limited') {
-    showMessage(`Please wait ${error.wait_seconds} seconds before trying again`);
-  }
-}
-```
+### Session Not Registered
 
-### Already Verified
+Thrown when `execute()` is called with `gasless: false` before any on-chain session exists:
 
 ```tsx
 try {
-  await cavos.resendVerificationEmail(email);
+  await execute(calls, { gasless: false });
 } catch (error) {
-  if (error.error === 'already_verified') {
-    showMessage('Your email is already verified! You can login now.');
+  if (error.message.includes('non-sponsored transaction without a registered session')) {
+    // Execute one sponsored tx first — it registers the session automatically
+    await execute(calls); // gasless: true (default)
+    // Now retry with user-pays
   }
 }
 ```
 
-### Verification Token Expired
+### Session Expired (Beyond Grace Period)
 
 ```tsx
-// Handle in your callback page
-const searchParams = new URLSearchParams(window.location.search);
-if (searchParams.get('status') === 'error') {
-  const message = searchParams.get('message');
-  if (message?.includes('expired')) {
-    showMessage('Verification link expired. Request a new one.');
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('SESSION_EXPIRED')) {
+    // Session expired beyond the 48h grace window — must re-login
+    await login('google');
   }
 }
 ```
+
+### Session Expired (Within Grace Period)
+
+The SDK handles this automatically — `execute()` will call `renewSession()` internally before proceeding. You don't need to handle this case explicitly.
+
+### Wallet Not Initialized
+
+```tsx
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('not initialized') || error.message.includes('Please login')) {
+    await login('google');
+  }
+}
+```
+
+---
+
+## Transaction Errors
+
+### Session Policy Violation
+
+```tsx
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('Spending limit exceeded')) {
+    showMessage('This transaction exceeds your session spending limit.');
+  } else if (error.message.includes('not in allowedContracts') || error.message.includes('policy')) {
+    showMessage('This contract is not permitted by your session policy.');
+  }
+}
+```
+
+### Paymaster Error
+
+```tsx
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('paymaster') || error.message.includes('gas tank')) {
+    showMessage('Gasless sponsorship is temporarily unavailable. Try again shortly.');
+  }
+}
+```
+
+### Insufficient Balance (User-Pays)
+
+```tsx
+try {
+  await execute(calls, { gasless: false });
+} catch (error) {
+  if (error.message.includes('insufficient') || error.message.includes('max_fee')) {
+    showMessage('Insufficient STRK balance for transaction fee.');
+  }
+}
+```
+
+### Contract / Entrypoint Not Found
+
+```tsx
+try {
+  await execute(calls);
+} catch (error) {
+  if (error.message.includes('Contract not found')) {
+    showMessage('Contract does not exist on this network.');
+  } else if (error.message.includes('Entry point not found')) {
+    showMessage('Function does not exist on this contract.');
+  }
+}
+```
+
+---
 
 ## Wallet Errors
 
@@ -178,27 +174,23 @@ try {
   await execute(calls);
 } catch (error) {
   if (error.message.includes('not deployed')) {
-    // Deploy the account first
+    // Deployment normally happens automatically — trigger manually if needed
     await deployAccount();
     await execute(calls);
   }
 }
 ```
 
-<Info>
-In most cases, account deployment happens automatically on first transaction. This error typically means the first transaction failed.
-</Info>
-
 ### Address Seed Mismatch
 
-Happens when the salt or identity doesn't match expected values:
+Happens when the identity (`sub`) or app salt doesn't match what the wallet was created with:
 
 ```tsx
 try {
-  await handleCallback(authData);
+  await login('google');
 } catch (error) {
   if (error.message.includes('Address seed mismatch')) {
-    // Identity verification failed - clear and retry
+    // Identity verification failed — clear state and re-authenticate
     await logout();
     await login('google');
   }
@@ -212,67 +204,37 @@ try {
   await login('google');
 } catch (error) {
   if (error.message.includes('MAU limit')) {
-    showMessage('App has reached its user limit. Please try later or upgrade plan.');
+    showMessage('App has reached its monthly active user limit.');
   }
 }
 ```
 
-## Transaction Errors
-
-### Paymaster Error
-
-```tsx
-try {
-  await execute(calls);
-} catch (error) {
-  if (error.message.includes('paymaster')) {
-    showMessage('Transaction sponsorship failed. Please try again.');
-  }
-}
-```
-
-### Contract Error
-
-```tsx
-try {
-  await execute(calls);
-} catch (error) {
-  // Common Starknet errors
-  if (error.message.includes('Contract not found')) {
-    showMessage('Contract does not exist on this network');
-  } else if (error.message.includes('Entry point not found')) {
-    showMessage('Function does not exist on this contract');
-  } else if (error.message.includes('insufficient')) {
-    showMessage('Insufficient balance for this operation');
-  }
-}
-```
+---
 
 ## Network Errors
 
-### RPC Timeout
+### RPC Timeout or Rate Limit
 
 ```tsx
 try {
   await execute(calls);
 } catch (error) {
-  if (error.message.includes('timeout') || 
-      error.message.includes('network')) {
-    showMessage('Network error. Please try again.');
+  if (error.message.includes('timeout') || error.message.includes('network')) {
+    showMessage('Network error. Please check your connection and try again.');
   }
 }
 ```
 
-### Custom RPC
-
-If hitting rate limits on default RPC:
+To avoid rate limits on the default shared RPC, provide your own:
 
 ```tsx
-const config = {
+<CavosProvider config={{
   appId: 'your-app-id',
-  starknetRpcUrl: 'https://your-own-rpc.com',  // Use your own RPC
-};
+  starknetRpcUrl: 'https://your-own-rpc-node.com',
+}}>
 ```
+
+---
 
 ## Debugging
 
@@ -281,47 +243,35 @@ const config = {
 ```tsx
 <CavosProvider config={{
   appId: 'your-app-id',
-  enableLogging: true,  // Shows SDK debug logs
+  enableLogging: true,
 }}>
 ```
 
-### Check Wallet State
+### Inspect Wallet State
 
 ```tsx
-const { isAuthenticated, address, walletStatus } = useCavos();
+const { isAuthenticated, address, walletStatus, sessionPublicKey } = useCavos();
 
-console.log('Address:', address);
-console.log('Authenticated:', isAuthenticated);
-console.log('Wallet status:', walletStatus);
-// { isDeploying, isDeployed, isRegistering, isSessionActive, isReady }
+console.log({
+  isAuthenticated,
+  address,
+  sessionPublicKey,
+  walletStatus, // { isDeploying, isDeployed, isRegistering, isSessionActive, isReady, pendingDeployTxHash? }
+});
 ```
 
-## Error Recovery Flow
+---
 
-```tsx
-async function handleError(error: Error): { action: string; message: string } {
-  // User action needed
-  if (error.message.includes('cancelled')) {
-    return { action: 'retry', message: 'Please complete authentication' };
-  }
-  
-  // Session issues
-  if (error.message.includes('expired') || error.message.includes('No session')) {
-    return { action: 'reauth', message: 'Session expired. Please login again.' };
-  }
-  
-  // App limit
-  if (error.message.includes('MAU limit')) {
-    return { action: 'wait', message: 'App limit reached' };
-  }
-  
-  // Network issue
-  if (error.message.includes('network') || error.message.includes('timeout')) {
-    return { action: 'retry', message: 'Network error. Retrying...' };
-  }
-  
-  // Unknown error
-  console.error('Unhandled error:', error);
-  return { action: 'support', message: 'An error occurred. Please contact support.' };
-}
-```
+## Error Recovery Reference
+
+| Error | Cause | Recovery |
+|-------|-------|----------|
+| `JwtExpiredError` | OAuth JWT expired before session was registered | Re-login via `login()` |
+| `SESSION_EXPIRED` | Session expired past 48h grace window | Re-login via `login()` |
+| `non-sponsored transaction without a registered session` | `gasless: false` before first tx | Execute a sponsored tx first |
+| `Spending limit exceeded` | Transaction exceeds session policy limit | Check `spendingLimits` in policy |
+| `Address seed mismatch` | Identity/salt mismatch | Logout and re-login |
+| `MAU limit` | App exceeded monthly users | Upgrade plan or wait for reset |
+| `paymaster` / `gas tank` | Paymaster temporarily unavailable | Retry, or use `gasless: false` |
+| `not initialized` | `execute()` called before `login()` | Call `login()` first |
+| `timeout` | RPC timeout | Retry, or configure a custom RPC URL |
