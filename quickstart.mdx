@@ -35,27 +35,34 @@ description: "Integrate Cavos wallet in 5 minutes"
 Wrap your application with `CavosProvider`:
 
 ```tsx
-// app/layout.tsx or _app.tsx
-import { CavosProvider } from '@cavos/react';
+// app/providers.tsx
+'use client';
 
-export default function RootLayout({ children }) {
+import { CavosProvider, SessionKeyPolicy } from '@cavos/react';
+
+const SESSION_POLICY: SessionKeyPolicy = {
+  allowedContracts: [
+    '0x04718f5a0Fc34cC1AF16A1cdee98fFB20C31f5cD61D6Ab07201858f4287c938D', // STRK
+  ],
+  spendingLimits: [
+    {
+      token: '0x04718f5a0Fc34cC1AF16A1cdee98fFB20C31f5cD61D6Ab07201858f4287c938D',
+      limit: BigInt('10000000000000000000'), // 10 STRK
+    },
+  ],
+  maxCallsPerTx: 5,
+};
+
+export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <CavosProvider
       config={{
-        appId: 'your-app-id',
+        appId: process.env.NEXT_PUBLIC_CAVOS_APP_ID || '',
         network: 'sepolia', // or 'mainnet'
-        session: {
-          defaultPolicy: {
-            allowedContracts: [
-              '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7' // STRK
-            ],
-            spendingLimits: [
-              { token: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7', limit: 10n * 10n**18n } // 10 STRK
-            ],
-            maxCallsPerTx: 10
-          }
-        }
+        paymasterApiKey: process.env.NEXT_PUBLIC_CAVOS_PAYMASTER_API_KEY || '',
+        session: { defaultPolicy: SESSION_POLICY },
       }}
+      modal={{ appName: 'My App', theme: 'dark' }}
     >
       {children}
     </CavosProvider>
@@ -63,46 +70,29 @@ export default function RootLayout({ children }) {
 }
 ```
 
-### 2. Authentication
+```tsx
+// app/layout.tsx
+import { Providers } from './providers';
 
-Cavos supports multiple authentication methods:
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
+```
+
+### 2. Authentication
 
 ```tsx
 'use client';
-import { useCavos, useSession } from '@cavos/react';
+import { useCavos } from '@cavos/react';
 
 export function AuthButtons() {
-  const { login, register, isAuthenticated, address } = useCavos();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  // Social Login (Google/Apple)
-  const handleSocialLogin = async (provider) => {
-    await login(provider); // 'google' or 'apple'
-  };
-
-  // Email/Password Registration
-  const handleRegister = async () => {
-    try {
-      await register('firebase', { email, password });
-      alert('Check your email to verify your account!');
-    } catch (error) {
-      if (error.error === 'rate_limited') {
-        alert(`Wait ${error.wait_seconds} seconds before trying again`);
-      }
-    }
-  };
-
-  // Email/Password Login
-  const handleEmailLogin = async () => {
-    try {
-      await login('firebase', { email, password });
-    } catch (error) {
-      if (error.name === 'EmailNotVerifiedError') {
-        alert('Please verify your email before logging in');
-      }
-    }
-  };
+  const { login, sendMagicLink, isAuthenticated, address } = useCavos();
 
   if (isAuthenticated && address) {
     return <p>Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>;
@@ -110,31 +100,11 @@ export function AuthButtons() {
 
   return (
     <div>
-      {/* Social Login */}
-      <button onClick={() => handleSocialLogin('google')}>
-        Login with Google
+      <button onClick={() => login('google')}>Login with Google</button>
+      <button onClick={() => login('apple')}>Login with Apple</button>
+      <button onClick={() => sendMagicLink('user@example.com')}>
+        Send Magic Link
       </button>
-      <button onClick={() => handleSocialLogin('apple')}>
-        Login with Apple
-      </button>
-
-      {/* Email/Password */}
-      <div>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-        />
-        <button onClick={handleRegister}>Register</button>
-        <button onClick={handleEmailLogin}>Login</button>
-      </div>
     </div>
   );
 }
@@ -142,42 +112,38 @@ export function AuthButtons() {
 
 ### 3. Execute Transactions
 
-After authentication, you're ready to execute transactions. No additional setup required!
+After authentication, transactions work immediately. No additional setup required.
 
 ```tsx
 import { useCavos } from '@cavos/react';
 
 function TransferButton() {
-  const { execute, isAuthenticated, address } = useCavos();
+  const { execute, walletStatus } = useCavos();
 
   const handleTransfer = async () => {
-    // No wallet popup! Session key signs automatically
+    // No wallet popup — session key signs automatically, gas is sponsored
     const txHash = await execute({
-      contractAddress: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
+      contractAddress: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d', // STRK
       entrypoint: 'transfer',
-      calldata: [recipientAddress, amount, '0'],
+      calldata: [recipientAddress, amountLow, amountHigh], // uint256 = [low, high]
     });
     console.log('Transaction:', txHash);
   };
 
-  if (!isAuthenticated || !address) {
-    return <p>Please login first</p>;
+  if (!walletStatus.isReady) {
+    return <p>{walletStatus.isDeploying ? 'Deploying...' : 'Setting up...'}</p>;
   }
 
-  return (
-    <button onClick={handleTransfer}>
-      Send Transfer (Gasless)
-    </button>
-  );
+  return <button onClick={handleTransfer}>Transfer STRK (Gasless)</button>;
 }
 ```
 
 **How it works:**
-1. After login, SDK generates a session key
-2. SDK automatically deploys the account (if needed) and registers the session — no manual steps
-3. `walletStatus.isReady` becomes `true` when the wallet is fully operational
-4. All transactions are signed with session key (fast & cheap) and **gasless** via AVNU Paymaster
-5. Session keys expire after ~24 hours and auto-renew
+1. After `login()`, the SDK generates a session key and derives the wallet address
+2. The account is deployed automatically (gasless via AVNU Paymaster) if not yet on-chain
+3. The session key is registered on-chain — `walletStatus.isReady` becomes `true`
+4. All transactions are signed with the session key (no popups) and sponsored by the paymaster
+5. Sessions expire after 24h and auto-renew within a 48h grace period
 
 ## The Flow
 
@@ -186,31 +152,22 @@ sequenceDiagram
     participant U as User
     participant SDK as Cavos SDK
     participant OAuth as OAuth Provider
-    participant EK as Session Key
     participant Chain as Blockchain
 
     U->>SDK: 1. login('google')
-    SDK->>OAuth: Redirect to Google
-    OAuth-->>SDK: Return JWT
-    SDK->>EK: Generate session keypair
-    SDK-->>SDK: Derive wallet address
+    SDK->>OAuth: Open new tab → Google OAuth
+    OAuth-->>SDK: JWT returned
+    SDK-->>SDK: Generate session key, derive wallet address
 
-    SDK->>Chain: 2. Auto-deploy account (if needed)
-    Note over Chain: Verifies JWT RSA signature
+    SDK->>Chain: 2. Auto-deploy account (gasless)
+    Note over Chain: Verifies JWT RSA signature on-chain
     SDK->>Chain: 3. Auto-register session key
-    Note over Chain: Session key stored on-chain
     Note over SDK: walletStatus.isReady = true ✅
 
-    U->>SDK: 4. execute(tx)
-    SDK->>EK: Sign with session key
-    EK-->>Chain: Gasless transaction ✓
+    U->>SDK: 4. execute(calls)
+    SDK->>Chain: Session signature (gasless) ✓
 
-    U->>SDK: 5. execute(tx)
-    SDK->>EK: Sign with session key
-    EK-->>Chain: Gasless transaction ✓
-
-    Note over OAuth: JWT verified on-chain
-    Note over EK: Expires in ~24 hours
+    Note over Chain: Subsequent txs use lightweight session signature
 ```
 
 ## Next Steps
@@ -220,10 +177,10 @@ sequenceDiagram
     Understand OAuth wallets, JWT verification, and session keys.
   </Card>
   <Card title="Authentication" icon="lock" href="/web/authentication">
-    Learn about Google, Apple, and Firebase email/password flows.
+    Google, Apple, and Magic Link flows.
   </Card>
   <Card title="Transactions" icon="paper-plane" href="/web/transactions">
-    Execute gasless transactions with session keys.
+    Gasless transactions, multicall, and session policies.
   </Card>
   <Card title="React Hooks" icon="react" href="/web/react-hooks">
     Full useCavos API reference.

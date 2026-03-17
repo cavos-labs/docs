@@ -1,6 +1,6 @@
 ---
 title: "Authentication"
-description: "Social login, email/password, and passkey authentication flows"
+description: "Social login, email/password, and magic link authentication flows"
 ---
 
 ## Authentication Methods
@@ -11,193 +11,133 @@ Cavos supports multiple authentication methods:
 |--------|----------|----------|
 | **Google OAuth** | Email, name, profile picture | Quick social login |
 | **Apple OAuth** | Email (optionally hidden), name | Privacy-focused social login |
-| **Email/Password** | Email verified with link | Traditional authentication |
-| **Passkey-Only** | Anonymous, no email | Privacy-first apps |
+| **Magic Link** | Email | Passwordless email login |
 
-All authentication methods create a **self-custodial StarkNet wallet** tied to your identity.
-(...)
-## Social Login (Google/Apple)
-(...)
-17: All authentication methods create a **self-custodial StarkNet wallet** tied to your identity.
-18: 
-19: ## Social Login (Google/Apple)
-20: 
-21: ### Login with Google
-22: 
-23: ```tsx
-24: import { useCavos } from '@cavos/react';
-25: 
-26: function LoginButton() {
-27:   const { login, isAuthenticated, user, address } = useCavos();
-28: 
-29:   if (isAuthenticated) {
-30:     return (
-31:       <div>
-32:         <p>Welcome, {user?.name}</p>
-33:         <p>Wallet: {address}</p>
-34:       </div>
-35:     );
-36:   }
-37: 
-38:   return (
-39:     <button onClick={() => login('google')}>
-40:       Login with Google
-41:     </button>
-42:   );
-43: }
-44: ```
-45: 
-46: ### Login with Apple
-47: 
-48: ```tsx
-49: <button onClick={() => login('apple')}>
-50:   Login with Apple
-51: </button>
-52: ```
-53: 
-54: ### Social Login Flow
-55: 
-56: 1. User clicks login button
-57: 2. SDK redirects to Google/Apple OAuth
-58: 3. User authenticates with their account
-59: 4. Provider redirects back with JWT token
-60: 5. SDK derives wallet address from OAuth identity
-61: 6. Wallet is ready to use (session key is registered on first transaction)
-62: 
-63: <Note>
-64: Your wallet address is **deterministically derived** from your OAuth identity (Google/Apple user ID). Same account = same wallet address across devices.
-65: </Note>
-66: 
-67: ## Email/Password Authentication (Firebase)
-68: 
-69: For traditional email/password authentication using Firebase. **Note: Email verification is required before you can access your wallet.**
-70: 
-71: ### 1. Registration
-72: 
-73: ```tsx
-74: import { useCavos } from '@cavos/react';
-75: 
-76: function RegisterForm() {
-77:   const { register, isLoading } = useCavos();
-78:   const [email, setEmail] = useState('');
-79:   const [password, setPassword] = useState('');
-80:   const [error, setError] = useState('');
-81: 
-82:   const handleRegister = async () => {
-83:     try {
-84:       await register('firebase', { email, password });
-85:       // User receives verification email automatically
-86:       alert('Check your email to verify your account!');
-87:     } catch (err) {
-88:       setError(err.message || 'Registration failed');
-89:     }
-90:   };
-91: 
-92:   return (
-93:     <form onSubmit={(e) => { e.preventDefault(); handleRegister(); }}>
-94:       <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
-95:       <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" />
-96:       <button type="submit" disabled={isLoading}>Register</button>
-97:       {error && <p>{error}</p>}
-98:     </form>
-99:   );
-100: }
-101: ```
-102: 
-103: ### 2. Login & Verification
-104: 
-105: If a user tries to login without verifying their email, the SDK will throw an `EmailNotVerifiedError`.
-106: 
-107: ```tsx
-108:   const handleLogin = async () => {
-109:     try {
-110:       await login('firebase', { email, password });
-111:     } catch (err) {
-112:       if (err.name === 'EmailNotVerifiedError') {
-113:         // User MUST verify email before proceeding
-114:         alert('Please verify your email first.');
-115:       }
-116:     }
-117:   };
-118: ```
-119: 
-120: ### 3. Verification Management
-121: 
-122: You can manually check verification status or resend the email:
-123: 
-124: ```tsx
-125: const { cavos } = useCavos();
-126: 
-127: // Check if verified
-128: if (!await cavos.isEmailVerified(email)) {
-129:   // Resend email
-130:   await cavos.resendVerificationEmail(email);
-131: }
-132: ```
-133: 
-134: <Note>
-135: Verification emails are rate-limited to 60 seconds.
-136: </Note>
+All methods create a **self-custodial Starknet wallet** tied to your identity. The wallet address is **deterministically derived** from your OAuth `sub` claim and a per-app salt — the same account produces the same address across devices.
 
-<Warning>
-**Email verification is required** before login. Users cannot access their wallet until they click the verification link in their email.
-</Warning>
+---
 
-<Note>
-Your wallet address is derived from your Firebase User ID. Same email = same wallet address, even if you reset your password.
-</Note>
+## Social Login (Google / Apple)
 
-## Passkey-Only Authentication
-
-For apps that don't need user identity, use passkey-only mode:
+### Login with Google
 
 ```tsx
 import { useCavos } from '@cavos/react';
 
-function PasskeyButton() {
-  const { createWallet, address, isLoading } = useCavos();
+function LoginButton() {
+  const { login, isAuthenticated, user, address } = useCavos();
 
-  if (address) {
-    return <p>Wallet: {address}</p>;
+  if (isAuthenticated) {
+    return (
+      <div>
+        <p>Welcome, {user?.name}</p>
+        <p>Wallet: {address}</p>
+      </div>
+    );
   }
 
   return (
-    <button onClick={createWallet} disabled={isLoading}>
-      Continue with Passkey
+    <button onClick={() => login('google')}>
+      Login with Google
     </button>
   );
 }
 ```
 
-### How It Works
+### Login with Apple
 
-When `createWallet()` is called without prior authentication:
+```tsx
+<button onClick={() => login('apple')}>
+  Login with Apple
+</button>
+```
 
-1. SDK checks for existing passkey wallet
-2. If found, prompts for biometric authentication
-3. If not found, creates new passkey and wallet
-4. Wallet is deployed gaslessly
+### How Social Login Works
 
-<Warning>
-Passkey-only wallets can only be recovered on devices that have the passkey synced (iCloud Keychain, Google Password Manager). Users should understand this limitation.
-</Warning>
+1. User clicks the login button
+2. SDK opens a new tab to the Google/Apple OAuth page
+3. User authenticates with their account
+4. The auth tab writes the result to localStorage and closes
+5. SDK derives the wallet address from the OAuth identity (`sub` + per-app salt)
+6. Account deployment + session registration happen automatically in the background
+7. `walletStatus.isReady` becomes `true` when setup is complete
+
+<Note>
+Your wallet address is **deterministically derived** from your OAuth identity. Same Google/Apple account = same wallet address across all devices.
+</Note>
+
+---
+
+## Magic Link Authentication
+
+Send a passwordless login link to a user's email. Resolves immediately after the email is sent; authentication completes in the background when the user clicks the link.
+
+```tsx
+import { useCavos } from '@cavos/react';
+
+function MagicLinkForm() {
+  const { sendMagicLink, isAuthenticated, address } = useCavos();
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const handleSend = async () => {
+    await sendMagicLink(email);
+    setSent(true);
+  };
+
+  if (isAuthenticated) {
+    return <p>Logged in! Wallet: {address}</p>;
+  }
+
+  if (sent) {
+    return <p>Magic link sent! Check your email.</p>;
+  }
+
+  return (
+    <div>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="your@email.com"
+      />
+      <button onClick={handleSend}>Send Magic Link</button>
+    </div>
+  );
+}
+```
+
+### How Magic Link Works
+
+1. `sendMagicLink(email)` sends the email and returns immediately
+2. The SDK starts polling localStorage for the auth result
+3. When the user clicks the link in their email (in any tab or on another device), the result is written to localStorage
+4. Auth state (`isAuthenticated`, `address`) updates automatically via `onAuthChange`
+
+---
 
 ## Session Management
 
 ### Check Authentication State
 
 ```tsx
-const { isAuthenticated, user, address, isLoading } = useCavos();
+const { isAuthenticated, user, address, isLoading, walletStatus } = useCavos();
 
-if (isLoading) {
-  return <Spinner />;
+if (isLoading) return <Spinner />;
+
+if (!isAuthenticated) return <LoginButton />;
+
+if (!walletStatus.isReady) {
+  return (
+    <div>
+      {walletStatus.isDeploying && <p>Deploying wallet...</p>}
+      {walletStatus.isRegistering && <p>Registering session...</p>}
+    </div>
+  );
 }
 
-if (!isAuthenticated) {
-  return <LoginButton />;
-}
-
-// User is authenticated
+// Fully ready
+return <App address={address} />;
 ```
 
 ### Logout
@@ -207,77 +147,32 @@ const { logout } = useCavos();
 
 async function handleLogout() {
   await logout();
-  // User is now logged out, wallet is cleared
+  // isAuthenticated becomes false, address becomes null
 }
 ```
 
 ### Session Restoration
 
-The SDK automatically restores sessions on page load:
+The SDK automatically restores sessions on page load via `init()`. If a valid session exists in browser storage, the wallet is restored without requiring the user to log in again.
 
-- **OAuth sessions**: Restored from browser storage
-- **Passkey wallets**: Restored from local storage (requires biometric)
+---
 
 ## Error Handling
 
-### Email Not Verified Error
+### JwtExpiredError
 
-When a user tries to login without verifying their email:
+When the OAuth JWT has expired (typically after 1 hour), `execute()` throws a `JwtExpiredError`. The user must re-login.
 
 ```tsx
+import { JwtExpiredError } from '@cavos/react';
+
 try {
-  await login('firebase', { email, password });
+  await execute(calls);
 } catch (error) {
-  if (error.name === 'EmailNotVerifiedError') {
-    // Show resend verification button
-    const { cavos } = useCavos();
-    await cavos.resendVerificationEmail(error.email);
+  if (error instanceof JwtExpiredError) {
+    // Prompt user to re-authenticate
+    await login('google');
   }
 }
 ```
 
-### Invalid Credentials
-
-```tsx
-try {
-  await login('firebase', { email, password });
-} catch (error) {
-  if (error.message?.includes('auth/wrong-password')) {
-    showError('Invalid email or password');
-  } else if (error.message?.includes('auth/user-not-found')) {
-    showError('No account found with this email');
-  }
-}
-```
-
-### Rate Limiting
-
-If a user tries to register multiple times:
-
-```tsx
-try {
-  await register('firebase', { email, password });
-} catch (error) {
-  if (error.error === 'rate_limited') {
-    showError(`Please wait ${error.wait_seconds} seconds before trying again`);
-  }
-}
-```
-
-## Account Deletion
-
-To permanently delete a user's account and wallet:
-
-```tsx
-const { deleteAccount } = useCavos();
-
-async function handleDeleteAccount() {
-  if (confirm('This action is irreversible. Delete account?')) {
-    await deleteAccount();
-  }
-}
-```
-
-<Warning>
-Account deletion removes the wallet from Cavos servers. The on-chain account still exists but the private key is irrecoverable.
-</Warning>

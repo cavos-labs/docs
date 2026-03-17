@@ -1,6 +1,6 @@
 ---
 title: "React Hooks"
-description: "useCavos and useSession hook reference"
+description: "useCavos hook reference and CavosProvider configuration"
 ---
 
 ## CavosProvider
@@ -10,7 +10,7 @@ The provider component that initializes the SDK and provides context to child co
 ```tsx
 import { CavosProvider } from '@cavos/react';
 
-<CavosProvider config={config}>
+<CavosProvider config={config} modal={modalConfig}>
   <App />
 </CavosProvider>
 ```
@@ -21,16 +21,74 @@ import { CavosProvider } from '@cavos/react';
 interface CavosConfig {
   appId: string;                    // Required: Your Cavos App ID
   network?: 'sepolia' | 'mainnet';  // Default: 'sepolia'
-  paymasterApiKey?: string;         // Custom paymaster key
-  starknetRpcUrl?: string;          // Custom RPC URL
-  enableLogging?: boolean;          // Enable debug logs
-  passkeyModal?: {                  // Modal customization
-    title?: string;
-    description?: string;
-    buttonText?: string;
-  };
+  paymasterApiKey?: string;         // Custom Cavos Paymaster API key
+  paymasterUrl?: string;            // Custom paymaster endpoint URL
+  starknetRpcUrl?: string;          // Custom Starknet RPC URL
+  backendUrl?: string;              // Custom backend URL (default: https://cavos.xyz)
+  enableLogging?: boolean;          // Enable debug logs (default: false)
+  session?: SessionConfig;          // Session duration and default policy
+  oauthWallet?: Partial<OAuthWalletConfig>; // Advanced: custom class hash / registry
+}
+
+interface SessionConfig {
+  sessionDuration?: number;         // Seconds (default: 86400 = 24h)
+  renewalGracePeriod?: number;      // Seconds (default: 172800 = 48h)
+  defaultPolicy?: SessionKeyPolicy; // Applied to all sessions
 }
 ```
+
+### Modal Props
+
+```typescript
+interface CavosModalConfig {
+  appName?: string;
+  appLogo?: string;
+  providers?: ('google' | 'apple' | 'email')[];
+  primaryColor?: string;
+  theme?: 'light' | 'dark'; // Default: 'light'
+  onSuccess?: (address: string) => void;
+}
+```
+
+**Example:**
+
+```tsx
+// app/providers.tsx
+'use client';
+
+import { CavosProvider, SessionKeyPolicy } from '@cavos/react';
+
+const SESSION_POLICY: SessionKeyPolicy = {
+  allowedContracts: [
+    '0x04718f5a0Fc34cC1AF16A1cdee98fFB20C31f5cD61D6Ab07201858f4287c938D', // STRK
+  ],
+  spendingLimits: [
+    {
+      token: '0x04718f5a0Fc34cC1AF16A1cdee98fFB20C31f5cD61D6Ab07201858f4287c938D',
+      limit: BigInt('10000000000000000000'), // 10 STRK (18 decimals)
+    },
+  ],
+  maxCallsPerTx: 5,
+};
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <CavosProvider
+      config={{
+        appId: process.env.NEXT_PUBLIC_CAVOS_APP_ID || '',
+        network: 'sepolia',
+        paymasterApiKey: process.env.NEXT_PUBLIC_CAVOS_PAYMASTER_API_KEY || '',
+        session: { defaultPolicy: SESSION_POLICY },
+      }}
+      modal={{ appName: 'My App', theme: 'dark' }}
+    >
+      {children}
+    </CavosProvider>
+  );
+}
+```
+
+---
 
 ## useCavos Hook
 
@@ -41,31 +99,47 @@ import { useCavos } from '@cavos/react';
 
 function MyComponent() {
   const {
-    // State
+    // --- State ---
     isAuthenticated,
     user,
     address,
     isLoading,
     hasActiveSession,
-    requiresWalletCreation,
-    walletStatus,           // NEW: Detailed wallet state
-    
-    // Actions
+    walletStatus,
+    sessionPublicKey,
+
+    // --- Auth ---
     login,
     register,
-    createWallet,
+    sendMagicLink,
+    logout,
+
+    // --- Transactions ---
     execute,
     signMessage,
-    registerCurrentSession, // Register current login session
-    revokeSession,          // Revoke specific session
-    emergencyRevokeAllSessions,  // Revoke all sessions
-    exportSession,          // Export session for CLI
-    logout,
-    deleteAccount,
-    retryWalletUnlock,
+
+    // --- Session Management ---
+    registerCurrentSession,
+    updateSessionPolicy,
+    renewSession,
+    revokeSession,
+    emergencyRevokeAllSessions,
+    exportSession,
+
+    // --- Account ---
+    isAccountDeployed,
+    deployAccount,
+    getBalance,
+    getAssociatedWallets,
+    switchWallet,
+
+    // --- Utilities ---
+    openModal,
+    closeModal,
     getOnramp,
-    
-    // SDK instance
+    resendVerificationEmail,
+
+    // --- Raw SDK ---
     cavos,
   } = useCavos();
 
@@ -77,152 +151,24 @@ function MyComponent() {
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `isAuthenticated` | boolean | User is authenticated (OAuth or passkey) |
-| `user` | UserInfo \| null | User info from OAuth (or placeholder for passkey) |
-| `address` | string \| null | Wallet address if loaded |
-| `isLoading` | boolean | SDK is initializing or processing |
-| `hasActiveSession` | boolean | Session is active and not expired |
-| `requiresWalletCreation` | boolean | User needs to create wallet (shows modal) |
-| `walletStatus` | WalletStatus | Detailed wallet deployment and session state |
+| `isAuthenticated` | `boolean` | User has an active OAuth session |
+| `user` | `UserInfo \| null` | User info from OAuth (`id`, `email`, `name`, `picture`) |
+| `address` | `string \| null` | Wallet address (`0x...`) |
+| `isLoading` | `boolean` | SDK is initializing or processing |
+| `hasActiveSession` | `boolean` | User is authenticated with a valid session |
+| `walletStatus` | `WalletStatus` | Detailed wallet deployment and session state |
+| `sessionPublicKey` | `string \| null` | Public key of the current session key (safe to display) |
 
-### Action Methods
-
-#### login(provider, credentials?, redirectUri?)
-
-Start authentication flow:
-
-**Social Login (Google/Apple):**
-```tsx
-await login('google');
-await login('apple');
-await login('google', undefined, 'https://myapp.com/callback');
-```
-
-**Email/Password (Firebase):**
-```tsx
-await login('firebase', {
-  email: 'user@example.com',
-  password: 'password123'
-});
-```
-
-**Error Handling:**
-```tsx
-try {
-  await login('firebase', { email, password });
-} catch (error) {
-  if (error.name === 'EmailNotVerifiedError') {
-    // Email not verified yet
-    console.log('Unverified email:', error.email);
-  } else if (error.message?.includes('auth/wrong-password')) {
-    // Invalid credentials
-  }
-}
-```
-
-#### register(provider, credentials)
-
-Register a new user with email/password:
-
-```tsx
-try {
-  await register('firebase', {
-    email: 'user@example.com',
-    password: 'secure123'
-  });
-  // Verification email sent
-  alert('Check your email to verify your account!');
-} catch (error) {
-  if (error.name === 'EmailVerificationRequiredError') {
-    // Registration successful, email sent
-  } else if (error.error === 'rate_limited') {
-    // Too many requests
-    console.log('Wait seconds:', error.wait_seconds);
-  }
-}
-```
-
-#### createWallet()
-
-Create or recover a wallet:
-
-```tsx
-await createWallet();
-```
-
-For passkey-only mode, call this without prior `login()`.
-
-#### execute(calls)
-
-Execute transactions using session keys:
-
-```tsx
-// Requires active session!
-const txHash = await execute({
-  contractAddress: '0x...',
-  entrypoint: 'transfer',
-  calldata: ['0x...', '1000', '0'],
-});
-```
-
-> [!NOTE]
-> All transactions are signed with the session key and are gasless. No signature prompt appears.
-
-#### signMessage(messageHash)
-
-Sign a message with the session key:
-
-```tsx
-const signature = await signMessage('0x123...'); // hex string message hash
-// Returns { r: string, s: string }
-```
-
-#### logout()
-
-Clear session and wallet:
-
-```tsx
-await logout();
-```
-
-#### deleteAccount()
-
-Permanently delete account:
-
-```tsx
-await deleteAccount();
-```
-
-#### Additional Methods
-
-The `cavos` instance provides additional utility methods:
-
-```tsx
-const { cavos } = useCavos();
-
-// Check email verification status
-const isVerified = await cavos.isEmailVerified('user@example.com');
-
-// Resend verification email
-await cavos.resendVerificationEmail('user@example.com');
-
-// Get wallet balance
-const balance = await cavos.getBalance();
-
-const deployed = await cavos.isAccountDeployed();
-```
-
-#### WalletStatus
-
-The `walletStatus` object provides detailed information about your wallet's on-chain state:
+### WalletStatus
 
 ```typescript
 interface WalletStatus {
-  isDeploying: boolean;     // Account is currently being deployed
-  isDeployed: boolean;      // Account contract is deployed on-chain
-  isRegistering: boolean;   // Session key is currently being registered
-  isSessionActive: boolean; // Session key is registered and not expired
-  isReady: boolean;         // Wallet is fully deployed + session active — ready for transactions
+  isDeploying: boolean;           // Account contract is being deployed
+  isDeployed: boolean;            // Account contract is deployed on-chain
+  isRegistering: boolean;         // Session key is being registered on-chain
+  isSessionActive: boolean;       // Session key is registered and not expired
+  isReady: boolean;               // Wallet fully set up — ready for transactions
+  pendingDeployTxHash?: string;   // Deploy tx hash if confirmation timed out (for explorer links)
 }
 ```
 
@@ -235,13 +181,16 @@ if (!address) {
   return <LoginButton />;
 }
 
-// After login, deploy + session registration happen automatically.
-// The consumer only needs to observe walletStatus:
 if (!walletStatus.isReady) {
   return (
     <div>
       {walletStatus.isDeploying && <p>Deploying wallet...</p>}
       {walletStatus.isRegistering && <p>Registering session...</p>}
+      {walletStatus.pendingDeployTxHash && (
+        <a href={`https://sepolia.starkscan.co/tx/${walletStatus.pendingDeployTxHash}`}>
+          View pending deploy
+        </a>
+      )}
       <span className="loading" />
     </div>
   );
@@ -254,226 +203,300 @@ return <TransactionButtons />;
 > [!NOTE]
 > `walletStatus.isReady` is `true` only when the account is deployed **and** the session is registered. Both steps happen automatically after `login()` — no manual calls needed.
 
-## Session Management Methods
+---
 
-### registerSession()
+## Auth Methods
 
-Register a session key on-chain. This activates your session and enables signature-free transactions.
+### login(provider)
+
+Start authentication flow — opens a new tab to Google/Apple OAuth:
 
 ```tsx
-const { registerSession, walletStatus } = useCavos();
+await login('google');
+await login('apple');
+```
 
-if (!walletStatus.isSessionActive) {
-  const txHash = await registerSession();
-  console.log('Session registered:', txHash);
-}
+### sendMagicLink(email)
+
+Send a magic link email. Resolves immediately after the email is sent; authentication completes in the background when the user clicks the link.
+
+```tsx
+const { sendMagicLink, isAuthenticated, address } = useCavos();
+
+await sendMagicLink('user@example.com');
+// UI can show "Check your email..."
+// The SDK polls localStorage — when the user clicks the link in another tab,
+// isAuthenticated and address update automatically via onAuthChange.
+```
+
+### logout()
+
+Clear session and wallet state:
+
+```tsx
+await logout();
+```
+
+---
+
+## Transaction Methods
+
+### execute(calls, options?)
+
+Execute transactions. Handles session registration automatically on first call.
+
+```tsx
+// Single call — gasless (default)
+const txHash = await execute({
+  contractAddress: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d',
+  entrypoint: 'transfer',
+  calldata: [recipientAddress, amountLow, amountHigh],
+});
+
+// Multiple calls (multicall)
+const txHash = await execute([
+  { contractAddress: tokenAddress, entrypoint: 'approve', calldata: [spender, amount, '0'] },
+  { contractAddress: protocolAddress, entrypoint: 'deposit', calldata: [amount, '0'] },
+]);
+
+// User pays gas (requires session already registered)
+const txHash = await execute(calls, { gasless: false });
+```
+
+| Session State | `gasless: true` | `gasless: false` |
+|---------------|-----------------|------------------|
+| Not registered | JWT signature — registers + executes atomically ✅ | Throws ❌ |
+| Registered & active | Session signature via Paymaster ✅ | Session signature, wallet pays STRK ✅ |
+| Expired (within grace) | Auto-renews, then executes ✅ | Auto-renews, then executes ✅ |
+| Expired (beyond grace) | Throws `SESSION_EXPIRED` ❌ | Throws `SESSION_EXPIRED` ❌ |
+
+### signMessage(typedData)
+
+Sign SNIP-12 typed data with the session key:
+
+```tsx
+const signature = await signMessage({
+  types: { StarknetDomain: [...], Message: [...] },
+  primaryType: 'Message',
+  domain: { name: 'MyApp', version: '1', chainId: '0x534e5f5345504f4c4941' },
+  message: { content: 'Hello!' },
+});
+// Returns [SESSION_V1_magic, r, s, session_key] — ready for on-chain is_valid_signature
+```
+
+---
+
+## Session Management
+
+### registerCurrentSession()
+
+Explicitly register the session key on-chain using the current JWT. Normally called automatically — only needed for advanced flows.
+
+```tsx
+const txHash = await registerCurrentSession();
 ```
 
 > [!IMPORTANT]
-> After calling `registerSession()`, `walletStatus.isSessionActive` will automatically update to `true`.
+> Call `updateSessionPolicy(policy)` **before** `registerCurrentSession()` if you changed the policy after login. See the policy sync rule below.
 
-### revokeSession(sessionKey?)
+### updateSessionPolicy(policy)
 
-Revoke a session key on-chain. If no `sessionKey` is provided, revokes the current active session.
+Update the session policy that will be embedded on-chain during registration.
 
 ```tsx
-const { revokeSession } = useCavos();
+const { updateSessionPolicy, registerCurrentSession } = useCavos();
 
-// Revoke current session
-await revokeSession();
-
-// Or revoke a specific session
-await revokeSession('0x123abc...');
+// ALWAYS update policy before registering
+updateSessionPolicy({
+  allowedContracts: [TOKEN_ADDRESS],
+  spendingLimits: [{ token: TOKEN_ADDRESS, limit: BigInt(10 * 10**18) }],
+  maxCallsPerTx: 5,
+});
+await registerCurrentSession();
 ```
 
-> [!NOTE]
-> This operation requires JWT verification on-chain and uses the OAuth signature.
+> [!WARNING]
+> If you call `registerCurrentSession()` without updating the policy first, the stale policy from login time gets registered. If that policy was empty, `policy_count == 0` on-chain — spending limits are skipped entirely.
+
+### renewSession()
+
+Renew an expired session key. Requires the session to be registered on-chain and expired within the grace period (default: 48h after expiry).
+
+```tsx
+try {
+  const txHash = await renewSession();
+  console.log('Session renewed:', txHash);
+} catch (err) {
+  if (err.message.includes('still active')) {
+    // Session not expired yet
+  } else if (err.message.includes('outside the grace period')) {
+    // Must re-login
+    await login('google');
+  }
+}
+```
+
+### revokeSession(sessionKey)
+
+Revoke a specific session key on-chain. Requires JWT verification.
+
+```tsx
+const { revokeSession, sessionPublicKey } = useCavos();
+
+// Revoke the current session key
+if (sessionPublicKey) {
+  await revokeSession(sessionPublicKey);
+}
+```
 
 ### emergencyRevokeAllSessions()
 
-Revoke **all** active sessions for the wallet. Use this if you suspect a session key has been compromised.
+Revoke **all** session keys by incrementing the on-chain revocation epoch. Use if you suspect a key was compromised.
 
 ```tsx
-const { emergencyRevokeAllSessions } = useCavos();
-
-if (confirm('This will revoke all sessions. Continue?')) {
+if (confirm('Revoke all sessions? You will need to re-authenticate.')) {
   await emergencyRevokeAllSessions();
 }
 ```
 
 > [!WARNING]
-> This invalidates all sessions immediately. You'll need to create and register a new session to transact again.
+> This invalidates all sessions immediately. The user must re-login to transact again.
 
 ### exportSession()
 
-Export the current session as a base64-encoded token for use in the Cavos CLI or other tools.
+Export the current session as a base64-encoded token for use in the Cavos CLI or autonomous agents.
 
 ```tsx
-const { exportSession, walletStatus } = useCavos();
-
-// Only export when session is active
 if (walletStatus.isSessionActive) {
   const token = exportSession();
-  
-  // Copy to clipboard
   navigator.clipboard.writeText(token);
-  
-  // Or display for user to copy
-  console.log('Session token:', token);
-  console.log('Use in CLI: export CAVOS_TOKEN=' + token);
 }
 ```
 
 **CLI Usage:**
 
-Once exported, the session token can be used in the Cavos CLI:
-
 ```bash
-# Set environment variable
-export CAVOS_TOKEN="<base64_token>"
-
-# Or import directly
 cavos session import <base64_token>
-
-# Now execute CLI commands
-cavos balance
 cavos transfer --to 0x... --amount 1.5 --token STRK
 ```
 
 > [!NOTE]
-> The exported token contains the session private key and wallet address. Store it securely and never share it publicly.
+> The exported token contains the session private key. Store it securely and never share it publicly.
 
-Manage session keys for signature-free transactions:
+---
+
+## Account Methods
+
+### deployAccount()
+
+Manually deploy the account contract. Normally called automatically after `login()`.
 
 ```tsx
-import { useSession } from '@cavos/react';
+const txHash = await deployAccount();
+```
 
-function SessionManager() {
-  const {
-    hasActiveSession,
-    createSession,
-    clearSession,
-    executeWithSession,
-  } = useSession();
+### isAccountDeployed()
 
-  return <div>Session: {hasActiveSession ? 'Active' : 'Inactive'}</div>;
+Check if the account contract is deployed on-chain.
+
+```tsx
+const deployed = await isAccountDeployed();
+```
+
+### getBalance()
+
+Get the ETH balance of the wallet (as a string in wei).
+
+```tsx
+const balance = await getBalance();
+```
+
+### getAssociatedWallets()
+
+Discover all wallets associated with the current user.
+
+```tsx
+const wallets = await getAssociatedWallets();
+// [{ address: '0x...', name: undefined }, { address: '0x...', name: 'trading' }]
+```
+
+### switchWallet(name?)
+
+Switch the active wallet by name (for multi-wallet users).
+
+```tsx
+await switchWallet('trading'); // Switch to named sub-wallet
+await switchWallet();          // Switch back to default wallet
+```
+
+---
+
+## SessionKeyPolicy Reference
+
+```typescript
+interface SessionKeyPolicy {
+  allowedContracts: string[];  // Only these contracts can be called
+  spendingLimits: Array<{
+    token: string;   // ERC-20 contract address
+    limit: bigint;   // Max amount in token base units (MUST be bigint)
+  }>;
+  maxCallsPerTx: number;       // Max calls per multicall transaction
 }
 ```
 
-### Session Properties
+> [!CAUTION]
+> `limit` **must** be a `bigint`. Using `number` silently truncates large values.
+> ```typescript
+> // ✅ Correct
+> limit: BigInt(10 * 10**18)   // or BigInt('10000000000000000000')
+> // ❌ Wrong — number overflow
+> limit: 10 * 10**18
+> ```
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `hasActiveSession` | boolean | Session is active and not expired |
-
-### Session Methods
-
-#### createSession(policy)
-
-Create a session with a policy defining allowed actions:
-
-```tsx
-await createSession({
-  allowedMethods: [
-    { contractAddress: '0x...token', selector: 'transfer' },
-    { contractAddress: '0x...token', selector: 'approve' },
-    { contractAddress: '0x...nft', selector: 'mint' },
-  ],
-  expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
-});
-```
-
-> [!IMPORTANT]
-> After `createSession()`, the user's private key is **cleared from memory**. Only the session key remains.
-
-#### clearSession()
-
-Invalidate the current session:
-
-```tsx
-clearSession();
-```
-
-#### executeWithSession(calls)
-
-Execute transactions with the session key:
-
-```tsx
-const txHash = await executeWithSession({
-  contractAddress: '0x...',
-  entrypoint: 'transfer',
-  calldata: ['0x...', '1000', '0'],
-});
-```
+---
 
 ## Complete Example
 
 ```tsx
-import { useCavos, useSession } from '@cavos/react';
+'use client';
+import { useCavos } from '@cavos/react';
 
-function App() {
-  const { login, logout, address, isAuthenticated } = useCavos();
-  const { hasActiveSession, createSession } = useSession();
+export default function App() {
+  const {
+    isAuthenticated, isLoading, address, walletStatus,
+    login, logout, execute,
+  } = useCavos();
 
-  const handleSetup = async () => {
-    // 1. Authenticate
-    await login('google');
-    
-    // 2. Create session (user signs once)
-    await createSession({
-      allowedMethods: [
-        { contractAddress: TOKEN_ADDRESS, selector: 'transfer' },
-      ],
-      expiresAt: Date.now() + 60 * 60 * 1000,
-    });
-    
-    // ✓ Ready for signature-free transactions
-  };
-
-  const handleTransfer = async () => {
-    const { execute } = useCavos();
-    
-    // No signature popup!
-    const txHash = await execute({
-      contractAddress: TOKEN_ADDRESS,
-      entrypoint: 'transfer',
-      calldata: [recipient, amount, '0'],
-    });
-  };
+  if (isLoading) return <p>Loading...</p>;
 
   if (!isAuthenticated) {
-    return <button onClick={handleSetup}>Login</button>;
+    return <button onClick={() => login('google')}>Login with Google</button>;
   }
+
+  if (!walletStatus.isReady) {
+    return (
+      <div>
+        {walletStatus.isDeploying && <p>Deploying wallet...</p>}
+        {walletStatus.isRegistering && <p>Registering session...</p>}
+      </div>
+    );
+  }
+
+  const handleTransfer = async () => {
+    const txHash = await execute({
+      contractAddress: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d',
+      entrypoint: 'transfer',
+      calldata: ['0xrecipient...', '1000000000000000000', '0'],
+    });
+    console.log('tx:', txHash);
+  };
 
   return (
     <div>
-      <p>Address: {address}</p>
-      <p>Session: {hasActiveSession ? '✅ Active' : '❌ Create session first'}</p>
-      <button onClick={handleTransfer} disabled={!hasActiveSession}>
-        Transfer
-      </button>
+      <p>Wallet: {address}</p>
+      <button onClick={handleTransfer}>Transfer 1 STRK</button>
       <button onClick={logout}>Logout</button>
     </div>
   );
 }
 ```
-
-## Session Policy Reference
-
-```typescript
-interface SessionPolicy {
-  allowedMethods: Array<{
-    contractAddress: string;  // Contract address (hex)
-    selector: string;         // Function name
-  }>;
-  expiresAt: number;          // Timestamp in milliseconds
-  metadata?: string;          // Optional metadata
-}
-```
-
-### Best Practices
-
-1. **Limit scope**: Only include methods your app actually needs
-2. **Short expiration**: Use 1 hour or less for sensitive operations
-3. **Re-create on demand**: Create new sessions when needed rather than long-lived ones
-4. **Check before execute**: Always verify `hasActiveSession` before `execute()`
