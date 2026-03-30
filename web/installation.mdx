@@ -69,6 +69,31 @@ export default function App({ children }) {
 | `starknetRpcUrl` | string | No | Alchemy RPC | Custom Starknet RPC URL |
 | `enableLogging` | boolean | No | false | Enable SDK debug logging |
 | `session` | `SessionConfig` | No | - | Session duration and default policy |
+| `slot` | `SlotConfig` | No | - | Cartridge Slot (Katana) configuration — enables `executeOnSlot()` |
+
+### Slot (Cartridge Katana) Configuration
+
+If your app runs on a [Cartridge Slot](https://docs.cartridge.gg/slot) (a private, fee-free Katana chain forked from mainnet), add the `slot` key to your config. This unlocks `executeOnSlot()` — gasless transactions on the Slot chain with no paymaster needed.
+
+```tsx
+const config = {
+  appId: 'your-app-id',
+  network: 'mainnet',       // Slot is forked from mainnet
+  paymasterApiKey: 'your-key',
+  slot: {
+    rpcUrl: 'https://api.cartridge.gg/x/your-project/katana',
+    // chainId: '0x...',   // Optional — omit to fetch dynamically
+  },
+};
+```
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `rpcUrl` | string | Yes | RPC URL of your Cartridge Katana Slot instance |
+| `chainId` | string | No | Chain ID for the Slot chain. If omitted, fetched dynamically from the RPC. Provide this to skip the extra round-trip or when using a custom chain ID. |
+
+> [!NOTE]
+> No relayer configuration is needed. The SDK uses a built-in Cavos relayer for the initial JWT session registration on Slot. Subsequent transactions use the session key directly.
 
 ### Next.js App Router
 

@@ -64,6 +64,7 @@
             "group": "Advanced",
             "pages": [
               "advanced/session-keys",
+              "advanced/slot",
               "advanced/onramp",
               "advanced/message-signing",
               "advanced/email-customization",
