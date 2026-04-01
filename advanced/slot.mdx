@@ -48,11 +48,11 @@ export function Providers({ children }) {
     <CavosProvider
       config={{
         appId: 'your-app-id',
-        network: 'mainnet',         // Slot is forked from mainnet
+        network: 'mainnet',         // Target network state
         paymasterApiKey: 'your-key',
         slot: {
           rpcUrl: 'https://api.cartridge.gg/x/your-project/katana',
-          // chainId: '0x534e5f4d41494e', // Optional — skip if you want auto-detection
+          chainId: '0x57505f4341564f53', // Override with internal Katana chain ID (e.g. WP_CAVOS)
         },
       }}
     >
@@ -67,10 +67,50 @@ export function Providers({ children }) {
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `rpcUrl` | string | Yes | RPC URL of your Cartridge Katana Slot instance |
-| `chainId` | string | No | Chain ID for the Slot chain (e.g. `'0x534e5f4d41494e'` for SN_MAIN). Omit to fetch dynamically from the RPC on each call. Providing it skips the extra round-trip. |
+| `chainId` | string | **Yes** | Chain ID for the Slot chain. You must manually provide the exact internal VM chain ID (e.g., `0x57505f4341564f53` for `WP_CAVOS`) to avoid signature mismatches. |
+
+> [!WARNING]
+> **Important:** Katana sequencers often report `SN_MAIN` via their RPC, but use a custom internal chain ID inside the Cairo VM. Because the Cavos session registration signature depends on this internal chain ID, you **must** manually set the `chainId` in your config to match the internal ID of your Katana genesis (e.g., `WP_CAVOS` / `0x57505f4341564f53`). If you do not provide the correct internal `chainId`, you will encounter an **"Invalid session key signature"** error.
 
 > [!NOTE]
 > If `slot` is not present in the config, nothing Slot-related happens — `executeOnSlot()` will throw.
+
+---
+
+## Finding your internal Katana Chain ID
+
+Since you cannot rely on the RPC `starknet_chainId` method to give you the internal VM chain ID of your Slot or Katana node, you must query it directly from within the Cairo VM.
+
+You can do this by deploying a minimalistic Cairo contract that returns `get_tx_info().chain_id`:
+
+```cairo
+#[starknet::interface]
+pub trait ICheckChainId<TContractState> {
+    fn get_chain_id(self: @TContractState) -> felt252;
+}
+
+#[starknet::contract]
+pub mod CheckChainId {
+    use starknet::info::get_tx_info;
+
+    #[storage]
+    struct Storage {}
+
+    #[abi(embed_v0)]
+    impl CheckChainIdImpl of super::ICheckChainId<ContractState> {
+        fn get_chain_id(self: @ContractState) -> felt252 {
+            get_tx_info().unbox().chain_id
+        }
+    }
+}
+```
+
+1. Deploy the contract above to your Katana node using `starkli`.
+2. Call the `get_chain_id` function:
+   ```bash
+   starkli call <contract_address> get_chain_id --rpc https://api.cartridge.gg/x/your-project/katana
+   ```
+3. Use the exact hexadecimal result in your `slot.chainId` configuration array.
 
 ---
 
@@ -167,6 +207,6 @@ The session policy configured in `CavosProvider` (`session.defaultPolicy`) appli
 |---------|-------------|-----|
 | `executeOnSlot` throws "Slot not configured" | `slot` key missing from config | Add `slot: { rpcUrl: '...' }` to `CavosProvider` config |
 | First Slot transaction takes long | Deploying account + registering session | Expected on the very first call — subsequent calls are instant |
-| "Invalid session key signature" on Slot | SDK version before session key y-parity fix | Update `@cavos/react` to latest version |
+| "Invalid session key signature" on Slot | Mismatched Katana chain ID or SDK version | Provide the internal Katana `chainId` (e.g. `0x57505f4341564f53` for `WP_CAVOS`) in the `slot` config, and ensure `@cavos/react` is updated |
 | Transaction rejected on Slot | Contract not in session policy | Add contract to `allowedContracts` in `session.defaultPolicy` |
-| Wrong chain ID | Custom Katana with non-standard chain ID | Pass `chainId` explicitly in `slot` config |
+| Wrong chain ID | Custom Katana uses an internal VM chain ID different from RPC | Pass `chainId` explicitly in `slot` config |

@@ -73,16 +73,19 @@ export default function App({ children }) {
 
 ### Slot (Cartridge Katana) Configuration
 
-If your app runs on a [Cartridge Slot](https://docs.cartridge.gg/slot) (a private, fee-free Katana chain forked from mainnet), add the `slot` key to your config. This unlocks `executeOnSlot()` — gasless transactions on the Slot chain with no paymaster needed.
+If your app runs on a [Cartridge Slot](https://docs.cartridge.gg/slot) (a private, fee-free Katana chain forked from mainnet) or a local Katana node, add the `slot` key to your config. This unlocks `executeOnSlot()` — gasless transactions on the Slot chain with no paymaster needed.
+
+> [!WARNING]
+> **Important:** Katana sequencers often report `SN_MAIN` via their RPC, but use a custom internal chain ID inside the Cairo VM. Because the Cavos session registration signature depends on this internal chain ID, you **must** manually set the `chainId` in your config to match the internal ID of your Katana genesis (e.g., `WP_CAVOS` / `0x57505f4341564f53`). If you do not provide the correct internal `chainId`, you will encounter an **"Invalid session key signature"** error.
 
 ```tsx
 const config = {
   appId: 'your-app-id',
-  network: 'mainnet',       // Slot is forked from mainnet
+  network: 'mainnet',       // Target network state
   paymasterApiKey: 'your-key',
   slot: {
     rpcUrl: 'https://api.cartridge.gg/x/your-project/katana',
-    // chainId: '0x...',   // Optional — omit to fetch dynamically
+    chainId: '0x57505f4341564f53',   // Override with internal Katana chain ID (e.g. WP_CAVOS)
   },
 };
 ```
@@ -90,7 +93,7 @@ const config = {
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `rpcUrl` | string | Yes | RPC URL of your Cartridge Katana Slot instance |
-| `chainId` | string | No | Chain ID for the Slot chain. If omitted, fetched dynamically from the RPC. Provide this to skip the extra round-trip or when using a custom chain ID. |
+| `chainId` | string | **Yes** | Chain ID for the Slot chain. You must provide the exact internal VM chain ID to avoid signature mismatches. |
 
 > [!NOTE]
 > No relayer configuration is needed. The SDK uses a built-in Cavos relayer for the initial JWT session registration on Slot. Subsequent transactions use the session key directly.
