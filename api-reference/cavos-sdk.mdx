@@ -22,6 +22,14 @@ interface CavosConfig {
   enableLogging?: boolean;              // Default: false
   session?: SessionConfig;              // Session duration and default policy
   oauthWallet?: Partial<OAuthWalletConfig>; // Advanced: custom class hash / registry
+  slot?: SlotConfig;                   // Cartridge Slot (Katana) configuration
+}
+
+interface SlotConfig {
+  rpcUrl: string;                   // Required: RPC URL of your Slot
+  chainId?: string;                 // Hex of internal chain ID
+  relayerAddress?: string;          // Optional: custom relayer
+  relayerPrivateKey?: string;       // Optional: relayer private key
 }
 
 interface SessionConfig {
@@ -248,12 +256,18 @@ Execute one or more transactions. Returns the transaction hash.
 
 **Session state behavior:**
 
-| State | `gasless: true` | `gasless: false` |
-|-------|-----------------|------------------|
 | Not registered | JWT signature — registers + executes atomically | Throws |
 | Registered + active | Paymaster (SNIP-9) | Direct INVOKE, wallet pays |
 | Expired within grace | Auto-renews, then executes | Auto-renews, then executes |
 | Expired beyond grace | Throws `SESSION_EXPIRED` | Throws `SESSION_EXPIRED` |
+
+### `executeOnSlot(calls)`
+
+```typescript
+async executeOnSlot(calls: Call | Call[]): Promise<string>
+```
+
+Execute transactions on a Cartridge Slot (Katana). Always fee-free, no paymaster needed. Handles account deployment and session registration on the Slot automatically on the first call.
 
 **Throws:**
 - `JwtExpiredError` — JWT has expired; user must re-login

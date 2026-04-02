@@ -28,6 +28,14 @@ interface CavosConfig {
   enableLogging?: boolean;          // Enable debug logs (default: false)
   session?: SessionConfig;          // Session duration and default policy
   oauthWallet?: Partial<OAuthWalletConfig>; // Advanced: custom class hash / registry
+  slot?: SlotConfig;                // Cartridge Slot (Katana) configuration
+}
+
+interface SlotConfig {
+  rpcUrl: string;                   // Required: RPC URL of your Slot
+  chainId?: string;                 // Hex of internal chain ID
+  relayerAddress?: string;          // Optional: custom relayer
+  relayerPrivateKey?: string;       // Optional: relayer private key
 }
 
 interface SessionConfig {
@@ -110,12 +118,12 @@ function MyComponent() {
 
     // --- Auth ---
     login,
-    register,
     sendMagicLink,
     logout,
 
     // --- Transactions ---
     execute,
+    executeOnSlot,
     signMessage,
 
     // --- Session Management ---
@@ -137,7 +145,6 @@ function MyComponent() {
     openModal,
     closeModal,
     getOnramp,
-    resendVerificationEmail,
 
     // --- Raw SDK ---
     cavos,

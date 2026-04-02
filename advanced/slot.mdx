@@ -31,7 +31,7 @@ sequenceDiagram
 ```
 
 1. **Account deployment on mainnet** happens automatically after `login()`, as usual.
-2. **First `executeOnSlot()` call** lazily deploys the account on Slot and registers the session key. The Cavos built-in relayer handles the `execute_from_outside_v2` call needed for JWT verification — no configuration required.
+2. **First `executeOnSlot()` call** lazily deploys the account on Slot and registers the session key. The SDK uses a relayer (configurable or default) to handle the `execute_from_outside_v2` call needed for JWT verification.
 3. **Subsequent `executeOnSlot()` calls** use the session key directly — no relayer, no paymaster, just a direct invoke.
 
 ---
@@ -52,7 +52,9 @@ export function Providers({ children }) {
         paymasterApiKey: 'your-key',
         slot: {
           rpcUrl: 'https://api.cartridge.gg/x/your-project/katana',
-          chainId: '0x57505f4341564f53', // Override with internal Katana chain ID (e.g. WP_CAVOS)
+          chainId: '0x57505f4341564f53', // hex of internal chain ID
+          relayerAddress: '0x...',       // Optional: funded account on Slot
+          relayerPrivateKey: '0x...',    // Optional: its private key
         },
       }}
     >
@@ -67,10 +69,15 @@ export function Providers({ children }) {
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `rpcUrl` | string | Yes | RPC URL of your Cartridge Katana Slot instance |
-| `chainId` | string | **Yes** | Chain ID for the Slot chain. You must manually provide the exact internal VM chain ID (e.g., `0x57505f4341564f53` for `WP_CAVOS`) to avoid signature mismatches. |
+| `chainId` | string | Optional | Chain ID for the Slot chain. Defaults to the primary network's ID. You should provide the exact internal VM chain ID (e.g., `0x57505f4341564f53` for `WP_CAVOS`) to avoid signature mismatches. |
+| `relayerAddress` | string | Optional | Account address to act as relayer for Slot deployment. Defaults to the built-in Cavos relayer. |
+| `relayerPrivateKey` | string | Optional | Private key for the relayer account. |
 
 > [!WARNING]
 > **Important:** Katana sequencers often report `SN_MAIN` via their RPC, but use a custom internal chain ID inside the Cairo VM. Because the Cavos session registration signature depends on this internal chain ID, you **must** manually set the `chainId` in your config to match the internal ID of your Katana genesis (e.g., `WP_CAVOS` / `0x57505f4341564f53`). If you do not provide the correct internal `chainId`, you will encounter an **"Invalid session key signature"** error.
+
+> [!IMPORTANT]
+> **Address Parity:** On Cavos Slots, the `CavosAccount` class and `JWKSRegistry` are typically deployed at the **exact same addresses** as production (Sepolia/Mainnet). The SDK now automatically uses these parity addresses. You no longer need to provide `classHash` or `jwksRegistryAddress` in the `SlotConfig`.
 
 > [!NOTE]
 > If `slot` is not present in the config, nothing Slot-related happens — `executeOnSlot()` will throw.
