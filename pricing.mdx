@@ -1,0 +1,52 @@
+---
+title: "Pricing"
+description: "Cavos pricing — pay only for the gas your users consume."
+---
+
+## Usage-Based Pricing
+
+Cavos has no subscriptions, no tiers, and no per-user fees. You only pay for the gas your users consume.
+
+### How it works
+
+1. **Deposit STRK** into your organization's Gas Tank via the [Billing Dashboard](https://cavos.xyz/dashboard/billing)
+2. A **5% platform fee** is deducted from each deposit
+3. The remaining balance sponsors your users' gasless transactions
+4. Gas costs are deducted atomically with each sponsored transaction
+
+### What's included
+
+| Feature | Cost |
+|---------|------|
+| SDK access (React & React Native) | Free |
+| Account creation & deployment | Sponsored from your Gas Tank |
+| Gasless transactions (Paymaster) | Sponsored from your Gas Tank |
+| Session keys & policies | Free |
+| Dashboard & analytics | Free |
+| Testnet (Sepolia) | **Completely free** — no deposit needed |
+
+### Testnet vs Mainnet
+
+<Tabs>
+  <Tab title="Sepolia (Testnet)">
+    On Sepolia, Cavos operates a **free pool**. You do not need to deposit any tokens — all transactions are sponsored automatically.
+
+    This is ideal for development and testing.
+  </Tab>
+  <Tab title="Mainnet">
+    On Mainnet, you must deposit STRK into your Gas Tank before your users can execute transactions.
+
+    Monitor your balance in the [Billing Dashboard](https://cavos.xyz/dashboard/billing) to prevent transaction failures.
+  </Tab>
+</Tabs>
+
+### Managing your Gas Tank
+
+Go to **[cavos.xyz/dashboard/billing](https://cavos.xyz/dashboard/billing)** to:
+- View your current STRK balance
+- Deposit STRK from any Starknet wallet
+- Track deposit history and gas consumption
+
+<Info>
+  If your users see an `"x-paymaster-api-key is invalid"` error, it almost always means your organization has run out of gas. Deposit more STRK to resolve this.
+</Info>
