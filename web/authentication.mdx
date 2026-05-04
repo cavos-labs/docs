@@ -1,6 +1,6 @@
 ---
 title: "Authentication"
-description: "Social login, email/password, and magic link authentication flows"
+description: "Social login, email/passwordless, magic link, and OTP authentication flows"
 ---
 
 ## Authentication Methods
@@ -12,6 +12,7 @@ Cavos supports multiple authentication methods:
 | **Google OAuth** | Email, name, profile picture | Quick social login |
 | **Apple OAuth** | Email (optionally hidden), name | Privacy-focused social login |
 | **Magic Link** | Email | Passwordless email login |
+| **Email OTP** | Email | Passwordless code-based email login |
 
 All methods create a **self-custodial Starknet wallet** tied to your identity. The wallet address is **deterministically derived** from your OAuth `sub` claim and a per-app salt — the same account produces the same address across devices.
 
@@ -116,6 +117,53 @@ function MagicLinkForm() {
 
 ---
 
+## Email OTP Authentication
+
+Send a six-digit email code, then verify it to complete login. This is a two-step flow for custom UIs.
+
+```tsx
+import { useState } from 'react';
+import { useCavos } from '@cavos/react';
+
+function OtpForm() {
+  const { sendOtp, verifyOtp, isAuthenticated, address } = useCavos();
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [sent, setSent] = useState(false);
+
+  if (isAuthenticated) {
+    return <p>Logged in! Wallet: {address}</p>;
+  }
+
+  return sent ? (
+    <form onSubmit={async (e) => { e.preventDefault(); await verifyOtp(email, code); }}>
+      <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" />
+      <button type="submit">Verify code</button>
+    </form>
+  ) : (
+    <form onSubmit={async (e) => { e.preventDefault(); await sendOtp(email); setSent(true); }}>
+      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <button type="submit">Send code</button>
+    </form>
+  );
+}
+```
+
+The raw SDK also provides aliases:
+
+```ts
+await cavos.requestOTP('user@example.com');
+await cavos.loginOTP('user@example.com', '123456');
+```
+
+### How Email OTP Works
+
+1. `sendOtp(email)` creates a pre-auth session and sends the code
+2. `verifyOtp(email, code)` verifies the code and completes authentication
+3. Account deployment + session registration happen automatically
+
+---
+
 ## Session Management
 
 ### Check Authentication State
@@ -175,4 +223,3 @@ try {
   }
 }
 ```
-

@@ -1,13 +1,13 @@
 ---
 title: "Auth Modal"
-description: "Built-in authentication modal with Google, Apple, and Magic Link"
+description: "Built-in authentication modal with Google, Apple, Magic Link, and Email OTP"
 ---
 
 ## Overview
 
-Cavos ships a pre-built authentication modal that handles the full login flow — provider selection, magic link email input, inbox confirmation screen, and wallet setup progress. You don't need to build any auth UI yourself.
+Cavos ships a pre-built authentication modal that handles the full login flow — provider selection, email login, and wallet setup progress. You don't need to build any auth UI yourself.
 
-The modal is fully self-contained: it calls `login()`, `sendMagicLink()`, and subscribes to `walletStatus` internally. It closes automatically once `walletStatus.isReady` is `true`.
+The modal is fully self-contained: it calls `login()`, `sendMagicLink()` or `sendOtp()/verifyOtp()`, and subscribes to `walletStatus` internally. It closes automatically once `walletStatus.isReady` is `true`.
 
 ---
 
@@ -32,6 +32,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         appName: 'My App',
         theme: 'dark',
         providers: ['google', 'apple', 'email'],
+        emailMode: 'otp',
         primaryColor: '#6366f1',
         onSuccess: (address) => {
           console.log('Wallet ready:', address);
@@ -51,6 +52,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 | `appName` | `string` | — | App name shown in the modal header: *"Sign in to {appName}"*. If omitted, shows *"Log in or sign up"*. |
 | `appLogo` | `string` | — | Reserved for future use. |
 | `providers` | `('google' \| 'apple' \| 'email')[]` | `['google', 'apple', 'email']` | Which auth methods to show. Omit any to hide it. |
+| `emailMode` | `'magic-link' \| 'otp'` | `'magic-link'` | Controls whether the email provider sends a magic link or a six-digit OTP code. |
 | `primaryColor` | `string` | `'#0A0908'` | Button color for the magic link submit action. |
 | `theme` | `'light' \| 'dark'` | `'light'` | Color scheme. |
 | `onSuccess` | `(address: string) => void` | — | Called ~1.6s after the wallet is fully ready (`walletStatus.isReady`). |
@@ -120,19 +122,19 @@ function NavBar() {
 
 ## Modal Screens
 
-The modal manages four internal screens automatically — you don't control which screen is shown.
+The modal manages its internal screens automatically — you don't control which screen is shown.
 
 ### 1. Provider Selection (`select`)
 
 The default screen. Shows whichever providers you configured.
 
-- **Email field** (if `'email'` is in `providers`): typing an email and pressing Enter or clicking Submit advances to the magic-link screen
+- **Email field** (if `'email'` is in `providers`): typing an email and pressing Enter or clicking Submit advances to the configured email flow
 - **Google button**: calls `login('google')`, opens OAuth tab
 - **Apple button**: calls `login('apple')`, opens OAuth tab
 
 ### 2. Magic Link Email (`magic-link`)
 
-Shown when the user clicks Submit on the email field. Accepts the email address and calls `sendMagicLink(email)` on submit.
+Shown when `emailMode` is `'magic-link'`. Accepts the email address and calls `sendMagicLink(email)` on submit.
 
 ### 3. Check Your Inbox (`verify`)
 
@@ -140,9 +142,13 @@ Shown after the magic link is sent. Displays the destination email and a **Resen
 
 Authentication completes in the background — when the user clicks the magic link in their email, the modal automatically transitions to the deploying screen.
 
-### 4. Wallet Setup (`deploying`)
+### 4. OTP Code (`otp-code`)
 
-Shown as soon as the user authenticates (OAuth or magic link). Displays a spinner while the SDK deploys the account and registers the session key. When `walletStatus.isReady` is `true`, the spinner becomes a checkmark and the modal closes after ~1.6s, firing `onSuccess`.
+Shown when `emailMode` is `'otp'`. The modal sends a six-digit code with `sendOtp(email)`, accepts the code, then calls `verifyOtp(email, code)`.
+
+### 5. Wallet Setup (`deploying`)
+
+Shown as soon as the user authenticates (OAuth, magic link, or OTP). Displays a spinner while the SDK deploys the account and registers the session key. When `walletStatus.isReady` is `true`, the spinner becomes a checkmark and the modal closes after ~1.6s, firing `onSuccess`.
 
 > [!IMPORTANT]
 > The modal **cannot be dismissed** during the `deploying` screen. Clicking outside or pressing the close button has no effect. This prevents the user from navigating away before their wallet is ready.
@@ -159,6 +165,9 @@ modal={{ appName: 'My App', providers: ['google', 'apple'] }}
 
 // Magic link only
 modal={{ appName: 'My App', providers: ['email'] }}
+
+// Email OTP only
+modal={{ appName: 'My App', providers: ['email'], emailMode: 'otp' }}
 
 // Google only
 modal={{ appName: 'My App', providers: ['google'] }}
@@ -210,6 +219,7 @@ interface CavosAuthModalProps {
   onSuccess?: (address: string) => void;
   appName?: string;
   providers?: ('google' | 'apple' | 'email')[];
+  emailMode?: 'magic-link' | 'otp';
   primaryColor?: string;
   theme?: 'light' | 'dark';
 }

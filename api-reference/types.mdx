@@ -50,6 +50,7 @@ interface CavosModalConfig {
   appName?: string;
   appLogo?: string;
   providers?: ('google' | 'apple' | 'email')[];
+  emailMode?: 'magic-link' | 'otp';
   primaryColor?: string;
   theme?: 'light' | 'dark';        // Default: 'light'
   onSuccess?: (address: string) => void;

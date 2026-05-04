@@ -52,6 +52,7 @@ interface CavosModalConfig {
   appName?: string;
   appLogo?: string;
   providers?: ('google' | 'apple' | 'email')[];
+  emailMode?: 'magic-link' | 'otp';
   primaryColor?: string;
   theme?: 'light' | 'dark'; // Default: 'light'
   onSuccess?: (address: string) => void;
@@ -119,6 +120,10 @@ function MyComponent() {
     // --- Auth ---
     login,
     sendMagicLink,
+    sendOtp,
+    verifyOtp,
+    requestOTP,
+    loginOTP,
     logout,
 
     // --- Transactions ---
@@ -235,6 +240,19 @@ await sendMagicLink('user@example.com');
 // The SDK polls localStorage — when the user clicks the link in another tab,
 // isAuthenticated and address update automatically via onAuthChange.
 ```
+
+### sendOtp(email) / verifyOtp(email, code)
+
+Send and verify a passwordless email OTP code:
+
+```tsx
+const { sendOtp, verifyOtp } = useCavos();
+
+await sendOtp('user@example.com');
+await verifyOtp('user@example.com', '123456');
+```
+
+`requestOTP(email)` and `loginOTP(email, code)` are aliases for the same flow.
 
 ### logout()
 

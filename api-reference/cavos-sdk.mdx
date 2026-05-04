@@ -103,6 +103,27 @@ sdk.onAuthChange(() => {
 });
 ```
 
+### `sendOtp(email)` / `verifyOtp(email, code)`
+
+```typescript
+async sendOtp(email: string): Promise<void>
+async verifyOtp(email: string, code: string): Promise<void>
+```
+
+Send and verify a passwordless email OTP code. Account deployment and session registration start automatically after `verifyOtp()`.
+
+```typescript
+await sdk.sendOtp('user@example.com');
+await sdk.verifyOtp('user@example.com', '123456');
+```
+
+Aliases are also available:
+
+```typescript
+await sdk.requestOTP('user@example.com');
+await sdk.loginOTP('user@example.com', '123456');
+```
+
 ### `handleCallback(authDataString)`
 
 ```typescript

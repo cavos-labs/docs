@@ -92,7 +92,7 @@ export default function RootLayout({ children }) {
 import { useCavos } from '@cavos/react';
 
 export function AuthButtons() {
-  const { login, sendMagicLink, isAuthenticated, address } = useCavos();
+  const { login, sendMagicLink, sendOtp, isAuthenticated, address } = useCavos();
 
   if (isAuthenticated && address) {
     return <p>Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>;
@@ -104,6 +104,9 @@ export function AuthButtons() {
       <button onClick={() => login('apple')}>Login with Apple</button>
       <button onClick={() => sendMagicLink('user@example.com')}>
         Send Magic Link
+      </button>
+      <button onClick={() => sendOtp('user@example.com')}>
+        Send OTP
       </button>
     </div>
   );

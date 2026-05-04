@@ -26,7 +26,7 @@ Cavos provides verifiable, MPC-free OAuth wallet infrastructure for Starknet app
 
 Cavos creates **self-custodial wallets** tied to your OAuth identity:
 
-1. **User authenticates** with Google, Apple, or Magic Link
+1. **User authenticates** with Google, Apple, Magic Link, or Email OTP
 2. **Provider issues JWT** token with user identity (sub claim)
 3. **Wallet address derived** deterministically: `addressSeed = Poseidon(sub, salt)` → contract address
 4. **Ephemeral session key generated** for transaction signing (~24 hour lifetime)
@@ -41,7 +41,7 @@ Cavos creates **self-custodial wallets** tied to your OAuth identity:
 
 <Columns cols={2}>
   <Card title="Web SDK" icon="browser" href="/web/installation">
-    For React web applications. Google, Apple, and Magic Link authentication.
+    For React web applications. Google, Apple, Magic Link, and Email OTP authentication.
   </Card>
   <Card title="React Native SDK" icon="mobile" href="/react-native/installation">
     For iOS and Android apps. Uses native passkeys with platform authenticators.
@@ -54,7 +54,7 @@ Cavos supports multiple ways to authenticate:
 
 - **Google OAuth**: Login with Google account
 - **Apple OAuth**: Login with Apple ID
-- **Magic Link**: Passwordless email login
+- **Magic Link / Email OTP**: Passwordless email login
 
 ## Quick Example
 

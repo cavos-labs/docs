@@ -1,11 +1,11 @@
 ---
 title: "Email Customization"
-description: "Customize verification emails for your app"
+description: "Customize verification, magic link, password reset, and OTP emails for your app"
 ---
 
 ## Overview
 
-When users register with email/password in your app, Cavos sends them a verification email. You can customize these emails from the dashboard to match your brand.
+When users authenticate with email, Cavos can send verification, magic link, password reset, and OTP emails. You can customize these emails from the dashboard to match your brand.
 
 ## What You Can Customize
 
@@ -49,17 +49,24 @@ Customize the full HTML template with these placeholders:
 | `{{user_email}}` | User's email address | "user@example.com" |
 | `{{app_logo}}` | Your app logo URL | "https://..." |
 
+OTP emails use these additional placeholders:
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{{otp_code}}` | Six-digit sign-in code | `123456` |
+| `{{expires_minutes}}` | Code expiry window | `10` |
+
 ## Customizing from Dashboard
 
-1. Go to **Dashboard → Apps → [Your App] → Email Verification**
-2. Click **"Configure"**
+1. Go to **Dashboard → Apps → [Your App]**
+2. Choose **Email Verification**, **Magic Link Email**, **OTP Email**, or **Password Reset Email**
 3. Edit the fields:
    - **App Name**: Shown in email
    - **App Logo**: Upload or paste URL
    - **Sender Name**: Display name for sender
    - **Reply-To Email**: Where replies go
    - **HTML Template**: Full customization
-4. Click **"Show Preview"** to see how it looks
+4. Use the preview tab to see how it looks
 5. Click **"Save Settings"**
 
 ## Default Template
